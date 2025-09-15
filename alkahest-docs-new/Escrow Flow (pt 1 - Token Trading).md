@@ -691,24 +691,24 @@ let escrow_receipt = alice_client
 
 ```python
 # Alice: Create escrow offering ERC-20 for ERC-721
-escrow = alice_client.erc20.buy_erc721_with_erc20(
+escrow = await alice_client.erc20.buy_erc721_for_erc20(
     {"address": usdc_token, "value": 1000000000},  # bid
     {"address": erc721_token, "id": 42},           # ask
     0                                               # no expiration
 )
 
 # Bob: Fulfill escrow offering ERC-721 for ERC-20
-payment = bob_client.erc721.pay_erc721_for_erc20(escrow["log"]["uid"])
+payment = await bob_client.erc721.pay_erc721_for_erc20(escrow["log"]["uid"])
 
 # Or use permit for gasless approval (ERC-20 only)
-escrow = alice_client.erc20.permit_and_buy_erc721_with_erc20(
+escrow = await alice_client.erc20.permit_and_buy_erc721_for_erc20(
     {"address": usdc_token, "value": 1000000000},
     {"address": erc721_token, "id": 42},
     0
 )
 
 # Can also use direct escrow/payment for custom demands
-escrow = alice_client.erc20.buy_with_erc20(
+escrow = await alice_client.erc20.buy_with_erc20(
     {"address": usdc_token, "value": 1000000000},
     {"arbiter": custom_arbiter, "demand": custom_demand},
     0
@@ -716,12 +716,12 @@ escrow = alice_client.erc20.buy_with_erc20(
 
 # Example of a complete ERC20-for-ERC20 trade
 # Alice creates escrow
-escrow = alice_client.erc20.buy_erc20_for_erc20(
+escrow = await alice_client.erc20.buy_erc20_for_erc20(
     {"address": usdc_token, "value": 1000},
     {"address": eurc_token, "value": 900},
     0
 )
 
 # Bob fulfills escrow
-payment = bob_client.erc20.pay_erc20_for_erc20(escrow["log"]["uid"])
+payment = await bob_client.erc20.pay_erc20_for_erc20(escrow["log"]["uid"])
 ```
