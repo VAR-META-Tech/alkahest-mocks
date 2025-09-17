@@ -17,7 +17,7 @@ docs/
 *.rdb
 # alkahest-ts
 # alkahest-rs
-alkahest-py
+# alkahest-py
 .aider.tags.cache.v3
 .aider.chat.history.md
 .aider.input.history
