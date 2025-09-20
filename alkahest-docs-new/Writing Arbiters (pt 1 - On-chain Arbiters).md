@@ -4,20 +4,20 @@ Arbiters are smart contracts that implement the `IArbiter` interface to validate
 
 ## Single-transaction arbiters
 
-Single-transaction arbiters perform validation synchronously within a single transaction. They check if an obligation meets the specified demands immediately when called, making them ideal for scenarios where validation logic can be executed entirely on-chain without external dependencies.
+Single-transaction arbiters perform validation synchronously within a single transaction. They check if an obligation meets the specified demands immediately when called.
 
-### Example 1: String Capitalizer
+### Example 1: String Capitalizer - Synchronous On-chain Computation
 
-The `StringCapitalizer` arbiter validates that a string has been properly capitalized. This is useful for tasks where users must transform text according to specific rules.
+This example demonstrates how to write an arbiter that performs synchronous on-chain computations to validate data transformations. It works with a generic data-holding obligation format (`StringObligation`).
 
-**Use Case**: A user posts a demand for someone to capitalize a string (e.g., "hello world"). Another user fulfills this by providing "HELLO WORLD". The arbiter validates that every lowercase letter has been converted to uppercase.
-
-**Implementation**: `src/arbiters/example/StringCapitalizer.sol`
+**Pattern illustrated**: Validating computational results where both the input (demand) and output (obligation) are stored on-chain, and the validation logic can be executed deterministically.
 
 ```solidity
 contract StringCapitalizer is IArbiter {
+    using ArbiterUtils for Attestation;
+
     struct DemandData {
-        string query;  // The string to be capitalized
+        string query;  // Input data
     }
 
     function checkObligation(
@@ -25,45 +25,68 @@ contract StringCapitalizer is IArbiter {
         bytes memory demand,
         bytes32 counteroffer
     ) external view override returns (bool) {
-        // Validate attestation integrity
+        // Step 1: Validate attestation integrity
         if (!obligation._checkIntrinsic()) return false;
 
-        // Decode the demand and obligation
+        // Step 2: Check counteroffer reference if provided
+        if (counteroffer != bytes32(0) && obligation.refUID != counteroffer) {
+            return false;
+        }
+
+        // Step 3: Decode both demand and obligation data
         DemandData memory demandData = abi.decode(demand, (DemandData));
         StringObligation.ObligationData memory obligationData =
             abi.decode(obligation.data, (StringObligation.ObligationData));
 
-        // Check if the result is properly capitalized
+        // Step 4: Apply validation logic
         return _isCapitalized(demandData.query, obligationData.item);
+    }
+
+    function _isCapitalized(
+        string memory query,
+        string memory result
+    ) internal pure returns (bool) {
+        // Deterministic computation to validate transformation
+        bytes memory queryBytes = bytes(query);
+        bytes memory resultBytes = bytes(result);
+
+        if (queryBytes.length != resultBytes.length) return false;
+
+        for (uint256 i = 0; i < queryBytes.length; i++) {
+            uint8 queryChar = uint8(queryBytes[i]);
+            uint8 resultChar = uint8(resultBytes[i]);
+
+            if (queryChar >= 0x61 && queryChar <= 0x7A) {
+                // Lowercase should be capitalized
+                if (resultChar != queryChar - 32) return false;
+            } else {
+                // Non-lowercase should remain unchanged
+                if (resultChar != queryChar) return false;
+            }
+        }
+
+        return true;
     }
 }
 ```
 
-**Key Features**:
+**When to use this pattern**:
 
-- Validates character-by-character transformation
-- Handles mixed case inputs, numbers, and special characters
-- Ensures string length matches between input and output
-- Supports counteroffer references for specific demand fulfillment
+- Validating mathematical computations
+- Checking data transformations (encoding, formatting, etc.)
+- Verifying algorithmic solutions
+- Any scenario where validation logic is purely computational
 
-**Testing**: See `test/integration/StringCapitalizer.t.sol` for comprehensive test coverage including:
+### Example 2: Game Winner - Conditional Escrow for External Attestations
 
-- Valid capitalization scenarios
-- Invalid capitalization rejection
-- Mixed case handling
-- Special character preservation
-- Fuzz testing for edge cases
+This example demonstrates how to write an arbiter that creates a conditional escrow system for EAS attestations originating from external sources (like a game contract).
 
-### Example 2: Game Winner
-
-The `GameWinner` arbiter validates EAS attestations that prove a user won a game, enabling them to claim rewards from escrow. This demonstrates how arbiters can work with existing attestation systems.
-
-**Use Case**: A gaming platform issues EAS attestations to winners. Players can use these attestations to claim prizes from various reward pools that specify requirements like minimum scores or specific games.
-
-**Implementation**: `src/arbiters/example/GameWinner.sol`
+**Pattern illustrated**: Validating attestations from trusted external systems, where the arbiter acts as a bridge between existing attestation infrastructure and escrow mechanisms.
 
 ```solidity
 contract GameWinner is IArbiter {
+    using ArbiterUtils for Attestation;
+
     IEAS public immutable eas;
     bytes32 public immutable GAME_WINNER_SCHEMA;
     address public immutable trustedGameContract;
@@ -76,9 +99,9 @@ contract GameWinner is IArbiter {
     }
 
     struct ClaimDemand {
-        bytes32 gameId;      // Which game the reward is for
-        uint256 minScore;    // Minimum score required
-        uint256 validAfter;  // Time after which wins are valid
+        bytes32 gameId;
+        uint256 minScore;
+        uint256 validAfter;
     }
 
     function checkObligation(
@@ -86,23 +109,30 @@ contract GameWinner is IArbiter {
         bytes memory demand,
         bytes32 counteroffer
     ) external view override returns (bool) {
-        // Validate attestation integrity
+        // Step 1: Validate attestation integrity
         if (!obligation._checkIntrinsic()) return false;
 
-        // Verify correct schema and trusted attester
+        // Step 2: Verify attestation source and type
         if (obligation.schema != GAME_WINNER_SCHEMA) return false;
         if (obligation.attester != trustedGameContract) return false;
 
-        // Decode and validate game winner data
+        // Step 3: Check counteroffer reference if provided
+        if (counteroffer != bytes32(0) && obligation.refUID != counteroffer) {
+            return false;
+        }
+
+        // Step 4: Decode and validate against demand criteria
         GameWinnerData memory winnerData =
             abi.decode(obligation.data, (GameWinnerData));
         ClaimDemand memory claimDemand =
             abi.decode(demand, (ClaimDemand));
 
-        // Check all requirements
+        // Step 5: Apply conditional logic
         if (winnerData.gameId != claimDemand.gameId) return false;
         if (winnerData.score < claimDemand.minScore) return false;
         if (winnerData.timestamp < claimDemand.validAfter) return false;
+
+        // Step 6: Verify attestation ownership
         if (obligation.recipient != winnerData.winner) return false;
 
         return true;
@@ -110,41 +140,29 @@ contract GameWinner is IArbiter {
 }
 ```
 
-**Key Features**:
+**When to use this pattern**:
 
-- Validates attestations from trusted game contracts only
-- Checks multiple claim requirements (game ID, minimum score, validity period)
-- Prevents attestation reuse by verifying recipient matches winner
-- Supports flexible reward criteria through `ClaimDemand` structure
+- Bridging external attestation systems with escrow contracts
+- Creating conditional release mechanisms based on third-party validations
+- Implementing trust-based validation where specific attesters are authorized
+- Building on top of existing EAS infrastructure
 
-**Security Considerations**:
+## Common Implementation Pattern
 
-- Only accepts attestations from the designated game contract
-- Verifies schema UID to prevent attestation type confusion
-- Ensures recipient field matches winner to prevent unauthorized claims
-- Supports time-based validity for tournament or seasonal rewards
+All single-transaction arbiters follow this structure:
 
-**Testing**: See `test/integration/GameWinner.t.sol` for comprehensive test coverage including:
+1. **Define data structures**: Create structs for demand parameters and expected obligation data
+2. **Implement `checkObligation`**: The main validation function that returns a boolean
+3. **Validate attestation integrity**: Use `ArbiterUtils` to check expiration and revocation
+4. **Verify schema and source** (if needed): Ensure attestations match expected format and origin
+5. **Decode data**: Extract information from both obligation and demand
+6. **Apply validation logic**: Implement the specific rules for your use case
+7. **Return verdict**: Simple pass/fail boolean
 
-- Valid winner claim scenarios
-- Invalid game ID rejection
-- Insufficient score handling
-- Time-based validity checks
-- Untrusted attester rejection
-- Schema validation
-- Multiple winners for team games
+The key difference between examples:
 
-## Usage Pattern
-
-Both examples follow a common pattern for single-transaction arbiters:
-
-1. **Define demand structure**: Specify what requirements must be met
-2. **Validate attestation**: Check expiration, revocation, and schema
-3. **Decode data**: Extract information from both obligation and demand
-4. **Apply business logic**: Implement specific validation rules
-5. **Return verdict**: Simple boolean indicating pass/fail
-
-This pattern makes arbiters composable with escrow systems and other DeFi protocols that need conditional execution based on attestations.
+- **Computational validation** (StringCapitalizer): Focus on algorithmic verification of data transformations
+- **Attestation bridging** (GameWinner): Focus on verifying external attestations and applying conditional logic
 
 ## Asynchronous arbiters
 
