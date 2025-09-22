@@ -168,4 +168,319 @@ The key difference between examples:
 
 Asynchronous arbiters handle validation that cannot be completed in a single transaction, such as time-delayed verification or multi-party consensus.
 
-[example: vote - to be implemented]
+### Example 3: MajorityVoteArbiter - Multi-party Consensus
+
+This example demonstrates an asynchronous arbiter that requires multiple authorized voters to reach consensus on whether an obligation satisfies requirements.
+
+**Pattern illustrated**: Multi-party validation where decisions are made through voting over multiple transactions, allowing time for review and deliberation.
+
+```solidity
+contract MajorityVoteArbiter is IArbiter {
+    using ArbiterUtils for Attestation;
+
+    struct DemandData {
+        address[] voters;  // List of authorized voters
+        uint256 quorum;    // Minimum votes required for approval
+        bytes data;        // Additional context for voters
+    }
+
+    struct VoteStatus {
+        uint256 yesVotes;
+        uint256 noVotes;
+        mapping(address => bool) hasVoted;
+        mapping(address => bool) vote;
+    }
+
+    IEAS public immutable eas;
+    mapping(bytes32 => VoteStatus) public voteStatuses;
+
+    // Events for transparency
+    event VoteCast(
+        bytes32 indexed obligation,
+        address indexed voter,
+        bool vote,
+        uint256 yesVotes,
+        uint256 noVotes
+    );
+
+    event ArbitrationComplete(
+        bytes32 indexed obligation,
+        bool decision,
+        uint256 yesVotes,
+        uint256 noVotes
+    );
+
+    function castVote(
+        bytes32 obligation,
+        bool vote,
+        bytes calldata demandData
+    ) external {
+        DemandData memory demand = abi.decode(demandData, (DemandData));
+
+        // Verify voter authorization
+        bool isAuthorized = false;
+        for (uint256 i = 0; i < demand.voters.length; i++) {
+            if (demand.voters[i] == msg.sender) {
+                isAuthorized = true;
+                break;
+            }
+        }
+        if (!isAuthorized) revert UnauthorizedVoter();
+
+        VoteStatus storage status = voteStatuses[obligation];
+
+        // Prevent double voting
+        if (status.hasVoted[msg.sender]) revert AlreadyVoted();
+
+        // Record vote
+        status.hasVoted[msg.sender] = true;
+        status.vote[msg.sender] = vote;
+
+        if (vote) {
+            status.yesVotes++;
+        } else {
+            status.noVotes++;
+        }
+
+        emit VoteCast(obligation, msg.sender, vote, status.yesVotes, status.noVotes);
+
+        // Check if decision is reached
+        if (status.yesVotes >= demand.quorum) {
+            emit ArbitrationComplete(obligation, true, status.yesVotes, status.noVotes);
+        } else if (status.noVotes > demand.voters.length - demand.quorum) {
+            // Quorum becomes impossible
+            emit ArbitrationComplete(obligation, false, status.yesVotes, status.noVotes);
+        }
+    }
+
+    function checkObligation(
+        Attestation memory obligation,
+        bytes memory demand,
+        bytes32 /* counteroffer */
+    ) public view override returns (bool) {
+        // Validate attestation integrity
+        if (!obligation._checkIntrinsic()) return false;
+
+        DemandData memory demandData = abi.decode(demand, (DemandData));
+        VoteStatus storage status = voteStatuses[obligation.uid];
+
+        // Return true if quorum reached with yes votes
+        return status.yesVotes >= demandData.quorum;
+    }
+}
+```
+
+**Key Features**:
+
+1. **Asynchronous Voting**: Votes are cast over multiple transactions, allowing time for deliberation
+2. **Configurable Quorum**: Each obligation can have different voting requirements
+3. **Early Completion**: Voting ends when outcome is mathematically determined
+4. **Vote Transparency**: All votes are recorded on-chain with events
+
+**When to use this pattern**:
+
+- Multi-signature approval workflows
+- DAO governance decisions
+- Dispute resolution systems
+- Any scenario requiring distributed consensus
+
+**Alternative Implementation Note**: This voting functionality could also be implemented as a separate voting contract that aggregates votes and submits the final result to `TrustedOracleArbiter`. This approach would:
+
+- Separate voting logic from arbitration logic
+- Allow reuse of existing infrastructure
+- Enable different voting mechanisms (weighted, ranked choice, etc.)
+
+## Implementing SDK extensions
+
+When writing custom arbiters, you'll want to create corresponding SDK extensions to make them easy to use from client applications. The Alkahest SDKs (TypeScript, Rust, and Python) provide extensible architectures for adding new functionality.
+
+### TypeScript SDK Extensions
+
+To add support for a new arbiter in the TypeScript SDK:
+
+1. **Create a client module** in `alkahest-ts/src/clients/`:
+
+```typescript
+// alkahest-ts/src/clients/majorityVote.ts
+import type { ViemClient } from "../utils";
+import type { ChainAddresses } from "../types";
+
+export const makeMajorityVoteClient = (
+  viemClient: ViemClient,
+  addresses: ChainAddresses,
+) => ({
+  encodeMajorityVoteDemand: (
+    voters: string[],
+    quorum: number,
+    data: string,
+  ) => {
+    return encodeAbiParameters(
+      [
+        { name: "voters", type: "address[]" },
+        { name: "quorum", type: "uint256" },
+        { name: "data", type: "bytes" },
+      ],
+      [voters, quorum, data],
+    );
+  },
+
+  decodeMajorityVoteDemand: (encoded: string) => {
+    return decodeAbiParameters(
+      [
+        { name: "voters", type: "address[]" },
+        { name: "quorum", type: "uint256" },
+        { name: "data", type: "bytes" },
+      ],
+      encoded,
+    );
+  },
+
+  castVote: async (obligation: string, vote: boolean, demandData: string) => {
+    // Implementation for casting a vote
+  },
+
+  getVoteStatus: async (obligation: string) => {
+    // Implementation for checking vote status
+  },
+});
+```
+
+2. **Add to the extensions** in `alkahest-ts/src/extensions.ts`:
+
+```typescript
+export const makeDefaultExtension = (client: any) => ({
+  // ... existing extensions ...
+  majorityVote: makeMajorityVoteClient(
+    client.viemClient,
+    client.contractAddresses,
+  ),
+});
+```
+
+### Rust SDK Extensions
+
+For the Rust SDK, implement a trait-based extension:
+
+1. **Define the trait** in `alkahest-rs/src/extensions/`:
+
+```rust
+// alkahest-rs/src/extensions/majority_vote.rs
+use alloy::primitives::{Address, Bytes, U256};
+
+#[async_trait]
+pub trait HasMajorityVote {
+    async fn encode_majority_vote_demand(
+        &self,
+        voters: Vec<Address>,
+        quorum: U256,
+        data: Bytes,
+    ) -> Result<Bytes>;
+
+    async fn cast_vote(
+        &self,
+        obligation: Bytes32,
+        vote: bool,
+        demand_data: Bytes,
+    ) -> Result<TransactionReceipt>;
+
+    async fn get_vote_status(
+        &self,
+        obligation: Bytes32,
+    ) -> Result<(U256, U256)>; // (yes_votes, no_votes)
+}
+```
+
+2. **Implement for AlkahestClient**:
+
+```rust
+impl<E> HasMajorityVote for AlkahestClient<E>
+where
+    E: AlkahestExtension,
+{
+    // Implementation details...
+}
+```
+
+### Python SDK Extensions
+
+The Python SDK uses PyO3 bindings to expose Rust functionality:
+
+1. **Add Python bindings** in `alkahest-py/src/`:
+
+```python
+# alkahest-py/alkahest_py/__init__.py
+from .alkahest_py import (
+    # ... existing imports ...
+    PyMajorityVoteArbiterDemandData as MajorityVoteArbiterDemandData,
+)
+
+class MajorityVoteClient:
+    def encode_demand(self, voters: list[str], quorum: int, data: bytes) -> bytes:
+        """Encode demand data for MajorityVoteArbiter"""
+        pass
+
+    def cast_vote(self, obligation: str, vote: bool, demand_data: bytes):
+        """Cast a vote for an obligation"""
+        pass
+
+    def get_vote_status(self, obligation: str) -> tuple[int, int]:
+        """Get current vote counts (yes_votes, no_votes)"""
+        pass
+```
+
+2. **Expose via AlkahestClient**:
+
+```python
+class AlkahestClient:
+    @property
+    def majority_vote(self) -> MajorityVoteClient:
+        """Access MajorityVote arbiter functionality"""
+        return MajorityVoteClient(self._client)
+```
+
+### Best Practices for SDK Extensions
+
+1. **Type Safety**: Use proper typing in all SDKs to catch errors at compile/type-check time
+2. **Consistent APIs**: Keep method names and patterns consistent across SDKs
+3. **Documentation**: Include comprehensive docstrings/comments with usage examples
+4. **Testing**: Write integration tests that verify the SDK correctly interacts with contracts
+5. **Error Handling**: Provide meaningful error messages for common failure cases
+6. **Gas Estimation**: Include gas estimation helpers for transaction methods
+7. **Event Parsing**: Add utilities to parse and filter relevant events
+
+### Example Usage Across SDKs
+
+Once implemented, developers can use your arbiter consistently across all SDKs:
+
+**TypeScript**:
+
+```typescript
+const demandData = await client.majorityVote.encodeMajorityVoteDemand(
+  [alice, bob, charlie],
+  2,
+  "0x",
+);
+await client.majorityVote.castVote(obligationUID, true, demandData);
+```
+
+**Rust**:
+
+```rust
+let demand_data = client.encode_majority_vote_demand(
+    vec![alice, bob, charlie],
+    U256::from(2),
+    Bytes::default(),
+).await?;
+client.cast_vote(obligation_uid, true, demand_data).await?;
+```
+
+**Python**:
+
+```python
+demand_data = client.majority_vote.encode_demand(
+    [alice, bob, charlie],
+    2,
+    b""
+)
+client.majority_vote.cast_vote(obligation_uid, True, demand_data)
+```
