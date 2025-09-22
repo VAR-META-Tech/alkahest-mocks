@@ -161,18 +161,18 @@ All single-transaction arbiters follow this structure:
 
 The key difference between examples:
 
-- **Computational validation** (StringCapitalizer): Focus on algorithmic verification of data transformations
-- **Attestation bridging** (GameWinner): Focus on verifying external attestations and applying conditional logic
+- **Computational validation** (StringCapitalizer): Demonstrates algorithmic verification of data transformations
+- **Attestation bridging** (GameWinner): Demonstrates verification of external attestations with conditional logic
 
 ## Asynchronous arbiters
 
-Asynchronous arbiters handle validation that cannot be completed in a single transaction, such as time-delayed verification or multi-party consensus.
+Asynchronous arbiters handle validation that cannot be completed in a single transaction. They maintain internal state across multiple transactions and only return true from `checkObligation` once a multi-step process has been completed.
 
-### Example 3: MajorityVoteArbiter - Multi-party Consensus
+### Example 3: MajorityVoteArbiter - Multi-transaction State Accumulation
 
-This example demonstrates an asynchronous arbiter that requires multiple authorized voters to reach consensus on whether an obligation satisfies requirements.
+This example demonstrates how to write an arbiter that accumulates state over multiple transactions before making a validation decision. It uses voting as an example of a process that requires multiple interactions before completion.
 
-**Pattern illustrated**: Multi-party validation where decisions are made through voting over multiple transactions, allowing time for review and deliberation.
+**Pattern illustrated**: Multi-transaction validation where the arbiter stores intermediate state and only approves obligations after a defined process reaches completion. The validation logic spans multiple transactions with state persistence between them.
 
 ```solidity
 contract MajorityVoteArbiter is IArbiter {
@@ -270,25 +270,28 @@ contract MajorityVoteArbiter is IArbiter {
 }
 ```
 
-**Key Features**:
+**Key Implementation Aspects**:
 
-1. **Asynchronous Voting**: Votes are cast over multiple transactions, allowing time for deliberation
-2. **Configurable Quorum**: Each obligation can have different voting requirements
-3. **Early Completion**: Voting ends when outcome is mathematically determined
-4. **Vote Transparency**: All votes are recorded on-chain with events
+1. **State Storage**: The contract maintains a mapping (`voteStatuses`) that persists state between transactions
+2. **Process Accumulation**: Multiple transactions (`castVote`) modify the stored state incrementally
+3. **Completion Detection**: The arbiter tracks when the process reaches a deterministic outcome
+4. **Deferred Validation**: `checkObligation` returns false until the process completes, then returns the final decision
 
 **When to use this pattern**:
 
-- Multi-signature approval workflows
-- DAO governance decisions
-- Dispute resolution systems
-- Any scenario requiring distributed consensus
+- Validation that requires waiting for external events or timeouts
+- Processes that need multiple parties to submit data before validation
+- Scenarios where validation depends on accumulating evidence over time
+- Any validation that cannot be deterministically computed in a single transaction
 
-**Alternative Implementation Note**: This voting functionality could also be implemented as a separate voting contract that aggregates votes and submits the final result to `TrustedOracleArbiter`. This approach would:
+**Pattern Variations**:
 
-- Separate voting logic from arbitration logic
-- Allow reuse of existing infrastructure
-- Enable different voting mechanisms (weighted, ranked choice, etc.)
+- **Time-based**: Wait for a specific time period before allowing validation
+- **Oracle-based**: Wait for external data submission from trusted sources
+- **Challenge-based**: Allow a challenge period before finalizing validation
+- **Threshold-based**: Accumulate metrics/scores until a threshold is reached
+
+**Alternative Implementation Note**: Rather than implementing complex multi-transaction logic directly in an arbiter, you could also create a separate contract that manages the multi-step process and then submits a final result to `TrustedOracleArbiter`. This separation of concerns can make the system more modular and reusable.
 
 ## Implementing SDK extensions
 
