@@ -213,4 +213,221 @@ This enables dynamic fulfillment types while maintaining structure:
 
 ## Fulfillment contracts that implement IArbiter
 
-[example: cryptography]
+Some fulfillment contracts have an obvious, inherent way to validate their data that makes sense to bundle directly with the obligation format. This pattern combines the obligation and arbiter functionality when the validation logic is tightly coupled to the data structure itself.
+
+**Pattern illustrated**: Bundled validation for cases where there's a single, canonical way to verify the fulfillment data (e.g., cryptographic signatures, mathematical proofs, or other deterministic validation).
+
+### Example: Cryptographic Signature Verification
+
+This example demonstrates a combined Obligation/IArbiter contract that handles cryptographic signature verification:
+
+```solidity
+contract CryptoSignatureObligation is BaseObligation, IArbiter {
+    struct DemandData {
+        address publicKey;      // Required signer
+        bytes32 challenge;      // Message to sign
+        string domain;         // Optional EIP-712 domain
+    }
+
+    struct ObligationData {
+        bytes signature;       // The cryptographic proof
+        address signerAddress; // Who created the signature
+        uint256 timestamp;     // When signed
+        string metadata;       // Additional context
+    }
+
+    // Implements IArbiter to self-validate
+    function checkObligation(
+        Attestation memory obligation,
+        bytes memory demand,
+        bytes32 counteroffer
+    ) external pure override returns (bool) {
+        DemandData memory demandData = abi.decode(demand, (DemandData));
+        ObligationData memory obligationData = decodeObligationData(
+            obligation.data
+        );
+
+        // Verify signer matches requirement
+        if (obligationData.signerAddress != demandData.publicKey) {
+            return false;
+        }
+
+        // Verify signature cryptographically
+        return _verifySignature(
+            demandData.challenge,
+            obligationData.signature,
+            demandData.publicKey,
+            demandData.domain
+        );
+    }
+
+    function _verifySignature(
+        bytes32 challenge,
+        bytes memory signature,
+        address expectedSigner,
+        string memory domain
+    ) internal pure returns (bool) {
+        // Extract signature components
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := mload(add(signature, 32))
+            s := mload(add(signature, 64))
+            v := byte(0, mload(add(signature, 96)))
+        }
+
+        // Create message hash
+        bytes32 messageHash = keccak256(
+            abi.encodePacked("\x19Ethereum Signed Message:\n32", challenge)
+        );
+
+        // Recover and verify signer
+        address recoveredSigner = ecrecover(messageHash, v, r, s);
+        return recoveredSigner == expectedSigner;
+    }
+}
+```
+
+Usage example:
+
+```solidity
+// Step 1: Create escrow requiring Bob's signature
+bytes memory demand = cryptoSigObligation.encodeDemand(
+    bob,                           // Bob must sign
+    keccak256("Authenticate"),     // Challenge to sign
+    ""                            // No domain
+);
+
+bytes32 escrowUid = erc20EscrowObligation.doObligation(
+    ERC20EscrowObligation.ObligationData({
+        token: paymentToken,
+        amount: paymentAmount,
+        arbiter: address(cryptoSigObligation),  // Self-validating
+        demand: demand
+    }),
+    expirationTime
+);
+
+// Step 2: Bob creates signature off-chain
+bytes32 messageHash = keccak256(
+    abi.encodePacked("\x19Ethereum Signed Message:\n32", challenge)
+);
+(uint8 v, bytes32 r, bytes32 s) = signMessage(messageHash);  // Off-chain
+bytes memory signature = abi.encodePacked(r, s, v);
+
+// Step 3: Submit signature as fulfillment
+bytes32 fulfillmentUid = cryptoSigObligation.doObligation(
+    CryptoSignatureObligation.ObligationData({
+        signature: signature,
+        signerAddress: bob,
+        timestamp: block.timestamp,
+        metadata: "Authentication proof"
+    }),
+    escrowUid
+);
+
+// Step 4: Claim escrow (self-validates via checkObligation)
+erc20EscrowObligation.collectEscrow(escrowUid, fulfillmentUid);
+```
+
+**When to use this pattern**:
+
+- The fulfillment format has one obvious way to validate it
+- Validation logic is inherently tied to the data structure
+- The same validation will always be used (no alternative interpretations)
+- Examples: cryptographic signatures, hash preimages, mathematical proofs
+
+**When NOT to use this pattern**:
+
+- Generic data formats that could be validated many different ways (like `StringObligation`)
+- When validation logic might need to be updated or swapped
+- When different use cases require different validation criteria
+- When validation depends on external state or oracle data
+
+**Trade-offs**:
+
+1. **Simplicity**: Single contract for both storage and validation
+2. **Tight Coupling**: Can't swap validation logic without new contract
+3. **Clear Intent**: The validation method is part of the fulfillment definition
+4. **Gas Consideration**: Validation logic affects every claim transaction
+
+### Design Principles for Combined Obligation/Arbiter Contracts
+
+When deciding whether to implement IArbiter in a fulfillment contract:
+
+**Good Candidates**:
+
+- Cryptographic operations (signatures, hashes, proofs)
+- Mathematical validations (ranges, formulas, checksums)
+- Self-contained proofs with deterministic verification
+- Domain-specific formats with canonical validation
+
+**Poor Candidates**:
+
+- Generic containers (strings, bytes, JSON-like structures)
+- Business logic that may evolve
+- Validations requiring external data or consensus
+- Formats used across different validation contexts
+
+**Implementation Guidelines**:
+
+- Keep `doObligation()` and `checkObligation()` logic clearly separated
+- Validation should be deterministic and state-independent
+- Consider gas costs of validation in every claim
+- Document why validation is bundled rather than separate
+
+### Advanced Pattern: Proof Aggregation
+
+For complex scenarios requiring multiple proofs:
+
+```solidity
+contract MultiProofObligation is BaseObligation, IArbiter {
+    struct ProofSet {
+        bytes[] proofs;
+        uint256 proofType;  // Bitmap of proof types included
+    }
+
+    function checkObligation(
+        Attestation memory obligation,
+        bytes memory demand,
+        bytes32 counteroffer
+    ) external pure override returns (bool) {
+        ProofSet memory proofs = abi.decode(obligation.data, (ProofSet));
+        RequiredProofs memory required = abi.decode(demand, (RequiredProofs));
+
+        // Verify each required proof type is present and valid
+        for (uint i = 0; i < required.types.length; i++) {
+            if (!_verifyProof(proofs, required.types[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+}
+```
+
+This pattern enables:
+
+- Multiple proof requirements in single fulfillment
+- Flexible proof combinations
+- Efficient batch validation
+- Extensible proof types
+
+### Choosing Between Patterns
+
+**Separate Arbiters (like with StringObligation)**:
+
+- Maximum flexibility - any arbiter can validate
+- Clean separation of concerns
+- Validation logic can evolve independently
+- Same format works with different validation strategies
+
+**Combined Obligation/IArbiter (like CryptoSignatureObligation)**:
+
+- Natural fit when validation is inherent to the format
+- Simpler deployment (one contract instead of two)
+- Clear semantics - the validation is part of the definition
+- Reduced flexibility - validation is fixed
+
+The choice isn't about sophistication but about coupling: use combined contracts when the validation method is fundamental to what the fulfillment represents, and separate contracts when the data format and validation logic naturally vary independently.
