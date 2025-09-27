@@ -7,3 +7,7 @@
 ## Asynchronous off-chain arbitration
 
 [example: uptime]
+
+## Contextless arbitration
+
+[example: identity registry]
