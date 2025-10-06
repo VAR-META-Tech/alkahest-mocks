@@ -17,15 +17,195 @@ Your oracle service needs to:
 
 The `TrustedOracleArbiter` contract handles the on-chain logic - your job is to implement the validation logic and submit decisions.
 
+## Contextless arbitration
+
+Contextless oracles validate fulfillments without examining the original escrow demand. Instead of checking demand parameters, they validate based on the intrinsic properties of the fulfillment itself and external state maintained by the oracle. This is the simplest pattern because you don't need to fetch or parse escrow data.
+
+**When to use**: Generic validation services (signature verification, format checking), stateful validation with external databases, reusable verification infrastructure, building marketplace-style validator services.
+
+**Reference implementation**: `alkahest-rs/tests/offchain_oracle_identity.rs`
+
+### Step 1: Define fulfillment format and registry state
+
+Define what fulfillments look like and what state you maintain:
+
+```rust
+use std::{collections::HashMap, sync::OnceLock};
+use alloy::primitives::{Address, Signature, keccak256};
+use tokio::sync::Mutex;
+
+// Fulfillment format (what sellers submit)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct IdentityFulfillment {
+    pubkey: Address,
+    nonce: u64,
+    data: String,
+    signature: Vec<u8>,
+}
+
+// Oracle's internal registry (identity address -> current nonce)
+static IDENTITY_REGISTRY: OnceLock<Mutex<HashMap<Address, u64>>> = OnceLock::new();
+
+fn identity_registry() -> &'static Mutex<HashMap<Address, u64>> {
+    IDENTITY_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+```
+
+### Step 2: Initialize your registry
+
+Before starting the listener, populate your oracle's state:
+
+```rust
+async fn run_contextless_oracle(
+    charlie_client: AlkahestClient<BaseExtensions>
+) -> eyre::Result<()> {
+    // Step 2: Register known identities with starting nonces
+    {
+        let mut registry = identity_registry().lock().await;
+        registry.insert(identity_address_1, 0);
+        registry.insert(identity_address_2, 0);
+        // In production: load from database
+    }
+
+    // ... rest of oracle setup ...
+}
+```
+
+### Step 3: Implement validation without demand
+
+The validation callback only looks at the fulfillment and your registry - no escrow/demand needed:
+
+```rust
+use alkahest_rs::{
+    contracts::StringObligation,
+    clients::oracle::ArbitrateOptions,
+    extensions::HasOracle,
+};
+use alloy::dyn_abi::SolType;
+
+fn verify_identity(
+    attestation: &alkahest_rs::contracts::IEAS::Attestation,
+) -> Pin<Box<dyn Future<Output = Option<bool>> + Send>> {
+    let attestation = attestation.clone();
+
+    Box::pin(async move {
+        // Step 3a: Extract fulfillment (no client helper needed - just decode directly)
+        let obligation: StringObligation::ObligationData =
+            match StringObligation::ObligationData::abi_decode(&attestation.data) {
+                Ok(o) => o,
+                Err(_) => return Some(false),
+            };
+
+        // Step 3b: Parse the fulfillment payload
+        let payload = obligation.item.clone();
+        let parsed: IdentityFulfillment = match serde_json::from_str(&payload) {
+            Ok(p) => p,
+            Err(_) => return Some(false),
+        };
+
+        // Step 3c: Check against oracle's registry
+        let mut registry = identity_registry().lock().await;
+        let Some(current_nonce) = registry.get_mut(&parsed.pubkey) else {
+            return Some(false);  // Unknown identity
+        };
+
+        // Step 3d: Verify nonce progression (replay protection)
+        if parsed.nonce <= *current_nonce {
+            return Some(false);
+        }
+
+        // Step 3e: Verify cryptographic signature
+        if parsed.signature.len() != 65 {
+            return Some(false);
+        }
+
+        let sig = match Signature::try_from(parsed.signature.as_slice()) {
+            Ok(s) => s,
+            Err(_) => return Some(false),
+        };
+
+        let message = format!("{}:{}", parsed.data, parsed.nonce);
+        let hash = keccak256(message.as_bytes());
+
+        let Ok(recovered) = sig.recover_address_from_prehash(&hash) else {
+            return Some(false);
+        };
+
+        if recovered != parsed.pubkey {
+            return Some(false);  // Signature mismatch
+        };
+
+        // Step 3f: Update state and approve
+        *current_nonce = parsed.nonce;
+        Some(true)
+    })
+}
+```
+
+### Step 4: Set up listener with after-arbitrate hook
+
+Wire everything together with the listener and an optional callback that runs after each decision is submitted on-chain:
+
+```rust
+async fn run_contextless_oracle(
+    charlie_client: AlkahestClient<BaseExtensions>
+) -> eyre::Result<()> {
+    let charlie_oracle = charlie_client.oracle().clone();
+
+    // Initialize registry (Step 2)
+    {
+        let mut registry = identity_registry().lock().await;
+        registry.insert(known_identity_address, 0);
+    }
+
+    // Listen and validate
+    let listen_result = charlie_oracle
+        .listen_and_arbitrate_async(
+            verify_identity,
+            |decision| async move {
+                // Optional: called after arbitration is submitted on-chain
+                // Useful for logging, notifications, or post-processing
+                println!("Arbitrated {}: {}", decision.attestation.uid, decision.decision);
+            },
+            &ArbitrateOptions {
+                skip_arbitrated: true,
+                only_new: true,  // Contextless often only needs new fulfillments
+            },
+        )
+        .await?;
+
+    // Cleanup
+    charlie_oracle.unsubscribe(listen_result.subscription_id).await?;
+
+    Ok(())
+}
+```
+
+**Complete contextless oracle pattern:**
+
+1. Define fulfillment format and registry state
+2. Initialize your oracle's registry/database
+3. Implement validation callback that:
+   - Extracts fulfillment data (decode attestation directly)
+   - Checks against oracle's internal state
+   - Performs intrinsic validation (e.g., signature checks)
+   - Updates state if needed
+   - Returns `Some(true)` or `Some(false)`
+4. Set up listener with optional after-arbitrate hook and cleanup
+
+**Key characteristic**: Never calls `get_escrow_and_demand()` - validation is entirely based on fulfillment content and oracle's own state.
+
 ## Synchronous off-chain arbitration
 
-Synchronous oracles process arbitration requests immediately within the listener callback. They fetch the data, apply validation logic, and return a decision in a single operation. This pattern works when validation can complete quickly without waiting for external events.
+Synchronous oracles process arbitration requests immediately and validate against demand parameters from the escrow. This pattern introduces SDK helpers for extracting nested data structures. Validation completes in a single operation when it can finish quickly.
 
-**When to use**: Validation completes quickly (< 1 second), no waiting for external events, computational validation, simple API calls, cryptographic verification.
+**When to use**: Validation completes quickly (< 1 second), custom business logic per escrow, computational validation, simple API calls, needs to check demand parameters.
+
+**Reference implementation**: `alkahest-rs/tests/offchain_oracle_capitalization.rs`
 
 ### Step 1: Define your demand format
 
-First, decide what information buyers need to provide in their demands. This becomes your oracle's "API":
+Decide what parameters buyers provide in their escrow demands:
 
 ```rust
 use serde::{Deserialize, Serialize};
@@ -43,46 +223,21 @@ struct CommandTestDemand {
 }
 ```
 
-Buyers will encode this as JSON in the `TrustedOracleArbiter` demand's `data` field.
+Buyers encode this as JSON in the `TrustedOracleArbiter` demand's `data` field.
 
-### Step 2: Set up the oracle listener
+### Step 2: Implement validation with demand
 
-Create a client and start listening for arbitration requests:
+Now introduce the SDK helpers for extracting escrow data:
 
 ```rust
 use alkahest_rs::{
     AlkahestClient,
-    clients::oracle::ArbitrateOptions,
-    extensions::HasOracle,
-};
-
-async fn run_oracle(charlie_client: AlkahestClient<BaseExtensions>) -> eyre::Result<()> {
-    let charlie_oracle = charlie_client.oracle().clone();
-
-    let listen_result = charlie_oracle
-        .listen_and_arbitrate_async(
-            validation_callback,  // We'll implement this next
-            |_| async {},         // Optional: callback for rejections
-            &ArbitrateOptions {
-                skip_arbitrated: true,  // Don't re-process already decided
-                only_new: false,        // Process backlog on startup
-            },
-        )
-        .await?;
-
-    Ok(())
-}
-```
-
-### Step 3: Implement validation logic
-
-The validation callback receives each fulfillment attestation and returns your decision:
-
-```rust
-use alkahest_rs::{
-    clients::arbiters::TrustedOracleArbiter,
+    clients::{
+        arbiters::TrustedOracleArbiter,
+        oracle::ArbitrateOptions,
+    },
     contracts::StringObligation,
-    extensions::HasStringObligation,
+    extensions::{HasOracle, HasStringObligation},
 };
 use std::sync::Arc;
 
@@ -97,31 +252,33 @@ async fn run_oracle(charlie_client: AlkahestClient<BaseExtensions>) -> eyre::Res
                 let attestation = attestation.clone();
 
                 async move {
-                    // Step 3a: Extract the fulfillment data
+                    // Step 2a: Extract fulfillment using client helper
                     let Ok(fulfillment) = client
                         .extract_obligation_data::<StringObligation::ObligationData>(&attestation)
                     else {
-                        return Some(false);  // Invalid format
+                        return Some(false);
                     };
 
                     let submitted_command = fulfillment.item;
 
-                    // Step 3b: Get the original demand from the escrow
+                    // Step 2b: Get escrow and extract demand using client helper
+                    // This fetches the escrow attestation from the fulfillment's refUID
+                    // and decodes the nested TrustedOracleArbiter demand structure
                     let Ok((_, demand)) = client
                         .get_escrow_and_demand::<TrustedOracleArbiter::DemandData>(&attestation)
                         .await
                     else {
-                        return Some(false);  // Can't find escrow
+                        return Some(false);
                     };
 
-                    // Step 3c: Parse your custom demand format
+                    // Step 2c: Parse your custom demand format from the inner data
                     let Ok(test_demand) = serde_json::from_slice::<CommandTestDemand>(
                         demand.data.as_ref()
                     ) else {
-                        return Some(false);  // Invalid demand format
+                        return Some(false);
                     };
 
-                    // Step 3d: Apply your validation logic
+                    // Step 2d: Apply validation logic using demand parameters
                     for case in test_demand.test_cases {
                         let full_command = format!("echo \"$INPUT\" | {}", submitted_command);
                         let output = match Command::new("bash")
@@ -135,19 +292,21 @@ async fn run_oracle(charlie_client: AlkahestClient<BaseExtensions>) -> eyre::Res
                                     .trim_end()
                                     .to_owned()
                             }
-                            _ => return Some(false),  // Command failed
+                            _ => return Some(false),
                         };
 
                         if output != case.output {
-                            return Some(false);  // Output doesn't match
+                            return Some(false);
                         }
                     }
 
-                    // All test cases passed
                     Some(true)
                 }
             },
-            |_| async {},
+            |decision| async move {
+                // Called after arbitration tx succeeds
+                println!("Arbitrated {}: {}", decision.attestation.uid, decision.decision);
+            },
             &ArbitrateOptions {
                 skip_arbitrated: true,
                 only_new: false,
@@ -155,62 +314,50 @@ async fn run_oracle(charlie_client: AlkahestClient<BaseExtensions>) -> eyre::Res
         )
         .await?;
 
+    charlie_oracle.unsubscribe(listen_result.subscription_id).await?;
     Ok(())
 }
 ```
 
-**Breaking down the validation callback:**
+**SDK helpers introduced:**
 
-1. **Extract fulfillment**: Parse the attestation data into your expected format
-2. **Get demand**: Retrieve the original escrow and extract the demand parameters
-3. **Parse demand**: Decode your custom demand format (JSON in this case)
-4. **Validate**: Apply your business logic to check if fulfillment meets demand
-5. **Return decision**: `Some(true)` to approve, `Some(false)` to reject
+- `client.extract_obligation_data::<T>()` - Decode fulfillment attestation data
+- `client.get_escrow_and_demand::<T>()` - Fetch escrow from refUID and decode demand structure
+  - Internally calls `get_escrow_attestation()` to fetch the escrow
+  - Then calls `extract_demand_data()` to decode the TrustedOracleArbiter wrapper and inner demand
 
-### Step 4: Handle lifecycle and cleanup
+### Step 3: Understanding the data flow
 
-Add proper cleanup when shutting down your oracle:
-
-```rust
-async fn run_oracle(charlie_client: AlkahestClient<BaseExtensions>) -> eyre::Result<()> {
-    let charlie_oracle = charlie_client.oracle().clone();
-    let charlie_client_arc = Arc::new(charlie_client.clone());
-
-    let listen_result = charlie_oracle
-        .listen_and_arbitrate_async(
-            move |attestation| {
-                // ... validation logic from Step 3 ...
-            },
-            |_| async {},
-            &ArbitrateOptions {
-                skip_arbitrated: true,
-                only_new: false,
-            },
-        )
-        .await?;
-
-    // Unsubscribe when done (e.g., on shutdown signal)
-    charlie_oracle
-        .unsubscribe(listen_result.subscription_id)
-        .await?;
-
-    Ok(())
-}
+```
+Fulfillment Attestation
+  └─ data: StringObligation { item: "tr '[:lower:]' '[:upper:]'" }
+  └─ refUID: points to escrow ──┐
+                                 │
+                                 ▼
+                         Escrow Attestation
+                           └─ data: ERC20EscrowObligation {
+                                arbiter: TrustedOracleArbiter address,
+                                demand: TrustedOracleArbiter::DemandData {
+                                  oracle: charlie_address,
+                                  data: CommandTestDemand (JSON) {
+                                    test_cases: [...]
+                                  }
+                                }
+                              }
 ```
 
 **Complete synchronous oracle pattern:**
 
 1. Define demand format (your oracle's API)
-2. Set up listener with `listen_and_arbitrate_async()`
-3. Implement validation callback:
-   - Extract fulfillment data
-   - Get original demand from escrow
-   - Parse demand format
-   - Apply validation logic
+2. Implement validation callback:
+   - Use `extract_obligation_data()` to get fulfillment
+   - Use `get_escrow_and_demand()` to get escrow demand
+   - Parse your custom inner demand format
+   - Apply validation logic comparing fulfillment to demand
    - Return `Some(true)` or `Some(false)`
-4. Handle cleanup on shutdown
+3. Set up listener with after-arbitrate hook
 
-**Reference implementation**: `alkahest-rs/tests/offchain_oracle_capitalization.rs`
+**Key difference from contextless**: Uses `get_escrow_and_demand()` to fetch and validate against per-escrow parameters.
 
 ## Asynchronous off-chain arbitration
 
@@ -643,18 +790,25 @@ async fn run_contextless_oracle(
 
 ## Choosing the Right Pattern
 
-| Validation Type | Pattern | Returns | State | Uses Demand? |
-|-----------------|---------|---------|-------|--------------|
-| Fast computation | Synchronous | `Some(bool)` | None | Yes |
-| Time-based monitoring | Asynchronous | `None` | Job queue | Yes |
-| Generic verification | Contextless | `Some(bool)` | Registry | No |
-| Custom business logic | Synchronous | `Some(bool)` | None | Yes |
-| Consensus/voting | Asynchronous | `None` | Vote tracker | Yes/No |
+Start simple and add complexity only when needed:
 
 **Decision tree:**
-1. Does validation need demand parameters? If no → **Contextless**
+1. Does validation need demand parameters? If no → **Contextless** (simplest)
 2. Does validation complete in < 1 second? If yes → **Synchronous**
-3. Does validation require waiting or monitoring? If yes → **Asynchronous**
+3. Does validation require waiting or monitoring? If yes → **Asynchronous** (most complex)
+
+| Validation Type | Pattern | Returns | State | Uses Demand? |
+|-----------------|---------|---------|-------|--------------|
+| Generic verification | Contextless | `Some(bool)` | Registry | No |
+| Fast computation | Synchronous | `Some(bool)` | None | Yes |
+| Custom business logic | Synchronous | `Some(bool)` | None | Yes |
+| Time-based monitoring | Asynchronous | `None` | Job queue | Yes |
+| Consensus/voting | Asynchronous | `None` | Vote tracker | Yes/No |
+
+**Complexity comparison:**
+- **Contextless**: Just decode and validate - no escrow lookup
+- **Synchronous**: Add escrow lookup + demand parsing
+- **Asynchronous**: Add background worker + state management + manual arbitration
 
 ## Production Considerations
 
