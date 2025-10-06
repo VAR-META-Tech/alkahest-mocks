@@ -1,12 +1,12 @@
 # Writing Arbiters (pt 2 - Off-chain Oracles)
 
-Off-chain oracles are arbitration services that run outside the blockchain but submit their decisions on-chain via the `TrustedOracleArbiter` contract. Unlike on-chain arbiters that validate within smart contract execution, oracles perform arbitration in an external environment where they can access APIs, run complex computations, maintain state databases, or integrate with external systems.
+Off-chain oracles are arbitration services that run outside the blockchain but submit their decisions on-chain via the `TrustedOracleArbiter` contract. Unlike on-chain arbiters (see pt 1) that validate within smart contract execution, oracles perform arbitration in an external environment where they can access APIs, run complex computations, maintain state databases, or integrate with external systems.
 
-This guide focuses on implementing oracle services in Rust using the `alkahest-rs` SDK. The patterns here apply to building production oracle infrastructure that can validate fulfillments according to custom business logic.
+This guide focuses on implementing oracle services in Rust using the `alkahest-rs` SDK. The patterns here apply to building production oracle infrastructure that can validate work submissions against arbitrary criteria.
 
 ## Understanding Your Role as an Oracle
 
-As an oracle operator (Charlie in the examples), you provide a trusted arbitration service. Buyers (Alice) create escrows that specify your address as the trusted judge, and sellers (Bob) submit fulfillments that you validate.
+**Example scenario**: Alice wants Bob to capitalize a string ("hello world" → "HELLO WORLD"). She creates an escrow offering payment, specifying you (Charlie) as the trusted oracle who will verify if Bob's work is correct. Bob submits his result, requests your arbitration, and if you approve, he can claim the payment.
 
 Your oracle service needs to:
 
@@ -17,11 +17,50 @@ Your oracle service needs to:
 
 The `TrustedOracleArbiter` contract handles the on-chain logic - your job is to implement the validation logic and submit decisions.
 
-## Validating without a demand
+## Oracle Flow Overview
 
-Some oracles validate fulfillments based purely on their intrinsic properties and the oracle's own maintained state, without referencing the original escrow. This is useful for building generic validation services.
+```
+1. Alice creates escrow → demands oracle=charlie_address, data="capitalize hello world"
+                         offers 100 tokens
+
+2. Bob fulfills → submits "HELLO WORLD"
+                 references Alice's escrow via refUID
+
+3. Bob requests arbitration → asks Charlie to validate
+
+4. Charlie validates → extracts Bob's result and Alice's query
+                      checks if "HELLO WORLD" matches uppercase("hello world")
+                      submits decision on-chain
+
+5. Bob claims payment → uses approved attestation to collect escrow
+```
+
+For a complete example of the Alice/Bob interaction flow, see "Escrow Flow (pt 2 - Job Trading)".
+
+## Three Validation Patterns
+
+| Pattern | Returns | State | Escrow Access | Use Case |
+|---------|---------|-------|---------------|----------|
+| **Contextless** | `Some(bool)` | Oracle maintains state | No | Signature verification, identity validation, format checking |
+| **Demand-Based** | `Some(bool)` | Stateless | Yes - reads demand | Custom validation per escrow, test case validation |
+| **Asynchronous** | `None` | Job queue | Yes - reads demand | Time-based monitoring, long-running computations |
+
+**Decision flowchart:**
+```
+Does validation require waiting over time?
+  ├─ Yes → Asynchronous
+  └─ No → Does validation need the escrow's demand parameters?
+           ├─ Yes → Demand-Based
+           └─ No → Contextless
+```
+
+## Pattern 1: Contextless Validation
+
+Contextless oracles validate fulfillments based purely on the fulfillment's intrinsic properties and the oracle's own maintained state, without referencing the original escrow demand. This pattern is useful for building reusable validation services that work across any escrow.
 
 **When to use**: Signature verification, format checking, identity validation, standard verification against a maintained registry.
+
+**Why contextless**: The oracle provides a generic service (e.g., "I verify signatures from known identities") rather than validating against buyer-specific criteria. The validation logic doesn't depend on what Alice requested - only on what Bob submitted.
 
 **Reference implementation**: `alkahest-rs/tests/offchain_oracle_identity.rs`
 
@@ -44,6 +83,8 @@ struct IdentityFulfillment {
 }
 
 // Oracle's internal registry (identity address -> current nonce)
+// This represents the oracle's concept of which identities are valid
+// and tracks nonces to prevent replay attacks
 static IDENTITY_REGISTRY: OnceLock<Mutex<HashMap<Address, u64>>> = OnceLock::new();
 
 fn identity_registry() -> &'static Mutex<HashMap<Address, u64>> {
@@ -106,10 +147,11 @@ fn verify_identity(
         // Step 3c: Check against oracle's registry
         let mut registry = identity_registry().lock().await;
         let Some(current_nonce) = registry.get_mut(&parsed.pubkey) else {
-            return Some(false);  // Unknown identity
+            return Some(false);  // Unknown identity - not in our registry
         };
 
         // Step 3d: Verify nonce progression (replay protection)
+        // Each identity must use an increasing nonce to prevent reusing old signatures
         if parsed.nonce <= *current_nonce {
             return Some(false);
         }
@@ -193,11 +235,13 @@ async fn run_contextless_oracle(
    - Returns `Some(true)` or `Some(false)`
 4. Set up listener with optional after-arbitrate hook and cleanup
 
-## Validating against a demand
+## Pattern 2: Demand-Based Validation
 
-Many oracles need to validate fulfillments against specific criteria provided by the buyer in the escrow demand. The SDK provides helpers to fetch the escrow and extract these parameters.
+Demand-based oracles validate fulfillments against specific criteria provided by the buyer in the escrow demand. Each escrow can specify different requirements, and the oracle validates that Bob's fulfillment meets Alice's exact specifications.
 
 **When to use**: Custom validation criteria per escrow, need to compare fulfillment against buyer's specifications, computational validation with test cases.
+
+**Why demand-based**: Alice specifies exactly what she wants (e.g., "capitalize these specific test cases"), and the oracle verifies Bob's work matches those requirements. Different escrows have different demands, all validated by the same oracle.
 
 **Reference implementation**: `alkahest-rs/tests/offchain_oracle_capitalization.rs`
 
@@ -225,7 +269,7 @@ Buyers encode this as JSON in the `TrustedOracleArbiter` demand's `data` field.
 
 ### Step 2: Implement validation with demand
 
-Now introduce the SDK helpers for extracting escrow data:
+The SDK provides critical helpers for extracting both the fulfillment and the original escrow demand:
 
 ```rust
 use alkahest_rs::{
@@ -260,8 +304,10 @@ async fn run_oracle(charlie_client: AlkahestClient<BaseExtensions>) -> eyre::Res
                     let submitted_command = fulfillment.item;
 
                     // Step 2b: Get escrow and extract demand using client helper
-                    // This fetches the escrow attestation from the fulfillment's refUID
+                    // CRITICAL: This fetches the escrow attestation from the fulfillment's refUID
                     // and decodes the nested TrustedOracleArbiter demand structure
+                    // Without checking the refUID, Bob could reuse one valid fulfillment
+                    // to claim multiple different escrows (replay attack)
                     let Ok((_, demand)) = client
                         .get_escrow_and_demand::<TrustedOracleArbiter::DemandData>(&attestation)
                         .await
@@ -270,6 +316,7 @@ async fn run_oracle(charlie_client: AlkahestClient<BaseExtensions>) -> eyre::Res
                     };
 
                     // Step 2c: Parse your custom demand format from the inner data
+                    // This is where Alice's specific requirements are decoded
                     let Ok(test_demand) = serde_json::from_slice::<CommandTestDemand>(
                         demand.data.as_ref()
                     ) else {
@@ -277,6 +324,7 @@ async fn run_oracle(charlie_client: AlkahestClient<BaseExtensions>) -> eyre::Res
                     };
 
                     // Step 2d: Apply validation logic using demand parameters
+                    // Run each test case to verify Bob's submission works correctly
                     for case in test_demand.test_cases {
                         let full_command = format!("echo \"$INPUT\" | {}", submitted_command);
                         let output = match Command::new("bash")
@@ -320,9 +368,10 @@ async fn run_oracle(charlie_client: AlkahestClient<BaseExtensions>) -> eyre::Res
 **SDK helpers introduced:**
 
 - `client.extract_obligation_data::<T>()` - Decode fulfillment attestation data
-- `client.get_escrow_and_demand::<T>()` - Fetch escrow from refUID and decode demand structure
-  - Internally calls `get_escrow_attestation()` to fetch the escrow
+- `client.get_escrow_and_demand::<T>()` - **THE KEY HELPER** - Fetch escrow from refUID and decode demand structure
+  - Internally calls `get_escrow_attestation()` to fetch the escrow attestation referenced by the fulfillment
   - Then calls `extract_demand_data()` to decode the TrustedOracleArbiter wrapper and inner demand
+  - This is how you access Alice's original requirements to validate against Bob's work
 
 ### Step 3: Understanding the data flow
 
@@ -355,11 +404,22 @@ Fulfillment Attestation
    - Return `Some(true)` or `Some(false)`
 3. Set up listener with after-arbitrate hook
 
-## Asynchronous validation
+## Pattern 3: Asynchronous Validation
 
-Some validation processes cannot complete immediately - they require monitoring over time, accumulating data, or waiting for external conditions. For these cases, the oracle schedules work for later and a background worker submits the decision when ready.
+Asynchronous oracles handle validation that cannot complete immediately. They require monitoring over time, accumulating data, or waiting for external conditions. The oracle schedules work for later, and a background worker submits the decision when ready.
 
 **When to use**: Time-based monitoring (uptime checks, deadline validation), accumulating evidence over multiple observations, long-running computations, waiting for consensus from multiple sources.
+
+**Why asynchronous**: Some validation is inherently time-based. For example, "verify this server stays up for 24 hours" cannot be validated instantly - you must schedule checks over time and make a final decision later.
+
+**Architecture**:
+```
+Listener (receives requests) → Job Queue (stores pending work)
+                                     ↓
+                                Worker Thread (processes jobs over time)
+                                     ↓
+                                On-chain Submission (final decision)
+```
 
 ### Step 1: Define demand format and job state
 
@@ -409,7 +469,7 @@ static SCHEDULER_STATE: OnceLock<Mutex<Option<SchedulerContext>>> = OnceLock::ne
 
 ### Step 2: Implement the scheduling callback
 
-The listener callback schedules work but doesn't make decisions (returns `None`):
+The listener callback schedules work but **does not make a decision** - it returns `None` to defer the decision to the worker:
 
 ```rust
 fn schedule_pings(
@@ -466,7 +526,11 @@ fn schedule_pings(
         });
 
         ctx.notify.notify_one();  // Wake up worker
-        None  // Don't make decision yet - worker will handle it
+
+        // Step 2f: Return None to defer the decision
+        // Unlike synchronous patterns that return Some(true/false),
+        // async oracles return None and let the worker submit the decision later
+        None
     })
 }
 ```
@@ -515,6 +579,9 @@ async fn run_worker(
             let decision = uptime >= job.min_uptime;
 
             // Step 3d: Submit decision on-chain
+            // CRITICAL: Unlike synchronous oracles where listen_and_arbitrate_async
+            // handles submission automatically, async oracles must MANUALLY call
+            // arbitrate_as_trusted_oracle() to submit their decision
             arbiters
                 .arbitrate_as_trusted_oracle(uid, decision)
                 .await
@@ -608,28 +675,40 @@ async fn run_async_oracle(
    - Calls `arbitrate_as_trusted_oracle()` to submit
 4. Wire together with shared state and cleanup
 
-**Key differences from synchronous:**
-- Callback returns `None` instead of `Some(bool)`
-- Requires background worker thread
-- Must manually call `arbitrate_as_trusted_oracle()`
-- Needs shared state management (Arc, Mutex)
+**Key differences from synchronous patterns:**
+
+| Aspect | Synchronous (Patterns 1 & 2) | Asynchronous (Pattern 3) |
+|--------|------------------------------|--------------------------|
+| Callback return value | `Some(true)` or `Some(false)` | `None` (defers decision) |
+| Decision submission | Automatic via SDK | Manual via `arbitrate_as_trusted_oracle()` |
+| Architecture | Single callback function | Callback + background worker |
+| State management | Optional (Pattern 1 only) | Required (job queue) |
+| Timing | Instant validation | Delayed validation over time |
 
 **Reference implementation**: `alkahest-rs/tests/offchain_oracle_uptime.rs`
 
 ## Choosing the Right Pattern
 
-| Validation Type | Pattern | Returns | State | Uses Demand? |
-|-----------------|---------|---------|-------|--------------|
-| Generic verification | Without demand | `Some(bool)` | Registry | No |
-| Fast computation | With demand | `Some(bool)` | None | Yes |
-| Custom business logic | With demand | `Some(bool)` | None | Yes |
-| Time-based monitoring | Asynchronous | `None` | Job queue | Yes |
-| Consensus/voting | Asynchronous | `None` | Vote tracker | Yes/No |
+**Quick decision tree:**
+```
+1. Does validation require waiting/monitoring over time?
+   └─ YES → Pattern 3: Asynchronous
 
-**Decision guide:**
-1. Does validation need escrow demand parameters? → **Validating against a demand**
-2. Can validation complete in < 1 second? → **Validating against a demand** or **Validating without a demand**
-3. Does validation require monitoring over time? → **Asynchronous validation**
+2. Does validation need the escrow's demand parameters?
+   ├─ YES → Pattern 2: Demand-Based
+   └─ NO  → Pattern 1: Contextless
+```
+
+**Detailed comparison:**
+
+| Validation Type | Pattern | Complexity | Example |
+|-----------------|---------|------------|---------|
+| Signature verification | Contextless | Low | Verify identity attestations |
+| Format/standard checking | Contextless | Low | Validate JSON schemas |
+| Test case validation | Demand-Based | Medium | Run buyer-specified tests |
+| Computational verification | Demand-Based | Medium | Check algorithmic solutions |
+| Uptime monitoring | Asynchronous | High | Verify 99% uptime over 24h |
+| Consensus voting | Asynchronous | High | Wait for multiple approvals |
 
 ## Production Considerations
 
@@ -710,50 +789,11 @@ async fn submit_with_retry(
 }
 ```
 
-### Security Checklist
+## Reference Implementations
 
-1. **Private key security**: Use environment variables or key management services
-2. **Input sanitization**: Validate all external data before processing
-3. **Rate limiting**: Track requests per address to prevent spam
-4. **Audit logging**: Record all decisions with timestamps
-5. **Monitoring**: Track approval/rejection rates and investigate anomalies
+See the full working examples in the test suite:
+- **Pattern 1 (Contextless)**: `alkahest-rs/tests/offchain_oracle_identity.rs` - Identity verification with signature validation
+- **Pattern 2 (Demand-Based)**: `alkahest-rs/tests/offchain_oracle_capitalization.rs` - Test case validation for shell commands
+- **Pattern 3 (Asynchronous)**: `alkahest-rs/tests/offchain_oracle_uptime.rs` - Uptime monitoring over time windows
 
-## Testing Your Oracle
-
-Test validation logic in isolation before running the full oracle:
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_validation_logic() {
-        let test_case = TestCase {
-            input: "hello".to_owned(),
-            output: "HELLO".to_owned(),
-        };
-
-        let result = run_command_test("tr '[:lower:]' '[:upper:]'", &test_case).await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_reject_invalid() {
-        let fulfillment = IdentityFulfillment {
-            pubkey: Address::ZERO,
-            nonce: 1,
-            data: "test".to_owned(),
-            signature: vec![0u8; 65],
-        };
-
-        let result = verify_signature(&fulfillment).await;
-        assert_eq!(result, Some(false));
-    }
-}
-```
-
-See the reference implementations for full integration test examples:
-- `alkahest-rs/tests/offchain_oracle_capitalization.rs` (synchronous)
-- `alkahest-rs/tests/offchain_oracle_uptime.rs` (asynchronous)
-- `alkahest-rs/tests/offchain_oracle_identity.rs` (contextless)
+These tests demonstrate the complete flow including escrow creation (Alice), fulfillment submission (Bob), oracle validation (Charlie), and payment collection.
