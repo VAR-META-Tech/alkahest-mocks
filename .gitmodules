@@ -13,6 +13,3 @@
 [submodule "alkahest-ts"]
     path = alkahest-ts
     url = https://github.com/CoopHive/alkahest-ts
-[submodule "alkahest-docs"]
-    path = alkahest-docs
-    url = https://github.com/CoopHive/alkahest-docs
