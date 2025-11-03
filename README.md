@@ -3,7 +3,7 @@
 
 # Alkahest
 
-**Decentralized RAG platform for scientific literature processing and retrieval**
+**Contract library and SDKs for validated peer-to-peer escrow**
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-yellow.svg)
