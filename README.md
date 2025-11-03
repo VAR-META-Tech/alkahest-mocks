@@ -1,7 +1,7 @@
 <div align="center">
   <img src="https://github.com/arkhai-io/decentralized-rag-database/blob/main/assets/logo.jpg" alt="Arkhai Logo" width="200"/>
 
-# Arkhai
+# Alkahest
 
 **Decentralized RAG platform for scientific literature processing and retrieval**
 
