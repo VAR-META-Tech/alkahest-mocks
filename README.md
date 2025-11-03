@@ -1,6 +1,14 @@
-## Alkahest
+<div align="center">
+  <img src="https://github.com/arkhai-io/decentralized-rag-database/blob/main/assets/logo.jpg" alt="Arkhai Logo" width="200"/>
 
-![logo](https://cdn.discordapp.com/attachments/1418531663859683329/1434753855152717894/image0.jpg?ex=69097a27&is=690828a7&hm=cb17127207624518ed2bdd957f41503b464b402178880491615980a7c51030aa)
+# Arkhai
+
+**Decentralized RAG platform for scientific literature processing and retrieval**
+
+![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-yellow.svg)
+
+</div>
 
 Alkahest is a library and ecosystem for peer-to-peer exchange.
 
