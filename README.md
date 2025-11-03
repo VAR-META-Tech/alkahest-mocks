@@ -1,5 +1,7 @@
 ## Alkahest
 
+![logo](https://discord.com/channels/1418531660957220895/1418531663859683329/1434753855341723758)
+
 Alkahest is a library and ecosystem for peer-to-peer exchange.
 
 Statements represent obligations within a peer-to-peer agreement, while validators represent conditions under which statements are considered valid.
