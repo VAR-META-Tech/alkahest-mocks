@@ -53,35 +53,34 @@ contract TokenBundlePaymentObligation2 is BaseObligation, IArbiter {
     {}
 
     function doObligation(
-        ObligationData calldata data
+        ObligationData calldata data,
+        bytes32 refUID
     ) public payable returns (bytes32 uid_) {
         bytes memory encodedData = abi.encode(data);
-        uid_ = this.doObligationForRaw{value: msg.value}(
+        uid_ = _doObligationForRaw(
             encodedData,
             0,
             msg.sender,
-            msg.sender,
-            bytes32(0)
+            refUID
         );
     }
 
     function doObligationFor(
         ObligationData calldata data,
-        address payer,
-        address recipient
+        address recipient,
+        bytes32 refUID
     ) public payable returns (bytes32 uid_) {
         bytes memory encodedData = abi.encode(data);
-        uid_ = this.doObligationForRaw{value: msg.value}(
+        uid_ = _doObligationForRaw(
             encodedData,
             0,
-            payer,
             recipient,
-            bytes32(0)
+            refUID
         );
     }
 
     function _beforeAttest(
-        bytes calldata data,
+        bytes memory data,
         address payer,
         address /* recipient */
     ) internal override {
@@ -130,7 +129,7 @@ contract TokenBundlePaymentObligation2 is BaseObligation, IArbiter {
 
     function _afterAttest(
         bytes32 uid,
-        bytes calldata data,
+        bytes memory data,
         address payer,
         address /* recipient */
     ) internal override {
@@ -189,9 +188,12 @@ contract TokenBundlePaymentObligation2 is BaseObligation, IArbiter {
     function checkObligation(
         Attestation memory obligation,
         bytes memory demand,
-        bytes32 /* counteroffer */
+        bytes32 counteroffer
     ) public view override returns (bool) {
         if (!obligation._checkIntrinsic(ATTESTATION_SCHEMA)) return false;
+
+        // Check that the payment references the correct escrow
+        if (obligation.refUID != counteroffer) return false;
 
         ObligationData memory payment = abi.decode(
             obligation.data,

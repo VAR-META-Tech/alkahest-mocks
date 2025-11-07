@@ -66,6 +66,12 @@ contract ERC721BarterUtils {
         uint256 askTokenId,
         uint64 expiration
     ) internal returns (bytes32) {
+        // Pull NFT from user to BarterUtils
+        IERC721(bidToken).transferFrom(msg.sender, address(this), bidTokenId);
+
+        // Approve obligation contract to spend BarterUtils' NFT
+        IERC721(bidToken).approve(address(erc721Escrow), bidTokenId);
+
         return
             erc721Escrow.doObligationFor(
                 ERC721EscrowObligation.ObligationData({
@@ -81,7 +87,6 @@ contract ERC721BarterUtils {
                     )
                 }),
                 expiration,
-                msg.sender,
                 msg.sender
             );
     }
@@ -90,10 +95,20 @@ contract ERC721BarterUtils {
         bytes32 buyAttestation,
         ERC721PaymentObligation.ObligationData memory demand
     ) internal returns (bytes32) {
+        // Pull NFT from user to BarterUtils
+        IERC721(demand.token).transferFrom(
+            msg.sender,
+            address(this),
+            demand.tokenId
+        );
+
+        // Approve obligation contract to spend BarterUtils' NFT
+        IERC721(demand.token).approve(address(erc721Payment), demand.tokenId);
+
         bytes32 sellAttestation = erc721Payment.doObligationFor(
             demand,
             msg.sender,
-            msg.sender
+            buyAttestation // Reference the escrow this payment is for
         );
 
         if (!erc721Escrow.collectEscrow(buyAttestation, sellAttestation)) {
@@ -147,6 +162,12 @@ contract ERC721BarterUtils {
         uint256 askAmount,
         uint64 expiration
     ) external returns (bytes32) {
+        // Pull NFT from user to BarterUtils
+        IERC721(bidToken).transferFrom(msg.sender, address(this), bidTokenId);
+
+        // Approve obligation contract to spend BarterUtils' NFT
+        IERC721(bidToken).approve(address(erc721Escrow), bidTokenId);
+
         return
             erc721Escrow.doObligationFor(
                 ERC721EscrowObligation.ObligationData({
@@ -162,7 +183,6 @@ contract ERC721BarterUtils {
                     )
                 }),
                 expiration,
-                msg.sender,
                 msg.sender
             );
     }
@@ -183,10 +203,20 @@ contract ERC721BarterUtils {
             (ERC721PaymentObligation.ObligationData)
         );
 
+        // Pull NFT from user to BarterUtils
+        IERC721(demand.token).transferFrom(
+            msg.sender,
+            address(this),
+            demand.tokenId
+        );
+
+        // Approve obligation contract to spend BarterUtils' NFT
+        IERC721(demand.token).approve(address(erc721Payment), demand.tokenId);
+
         bytes32 sellAttestation = erc721Payment.doObligationFor(
             demand,
             msg.sender,
-            msg.sender
+            buyAttestation // Reference the escrow this payment is for
         );
 
         if (!erc20Escrow.collectEscrow(buyAttestation, sellAttestation)) {
@@ -206,6 +236,12 @@ contract ERC721BarterUtils {
         uint256 askAmount,
         uint64 expiration
     ) external returns (bytes32) {
+        // Pull NFT from user to BarterUtils
+        IERC721(bidToken).transferFrom(msg.sender, address(this), bidTokenId);
+
+        // Approve obligation contract to spend BarterUtils' NFT
+        IERC721(bidToken).approve(address(erc721Escrow), bidTokenId);
+
         return
             erc721Escrow.doObligationFor(
                 ERC721EscrowObligation.ObligationData({
@@ -222,7 +258,6 @@ contract ERC721BarterUtils {
                     )
                 }),
                 expiration,
-                msg.sender,
                 msg.sender
             );
     }
@@ -243,10 +278,20 @@ contract ERC721BarterUtils {
             (ERC721PaymentObligation.ObligationData)
         );
 
+        // Pull NFT from user to BarterUtils
+        IERC721(demand.token).transferFrom(
+            msg.sender,
+            address(this),
+            demand.tokenId
+        );
+
+        // Approve obligation contract to spend BarterUtils' NFT
+        IERC721(demand.token).approve(address(erc721Payment), demand.tokenId);
+
         bytes32 sellAttestation = erc721Payment.doObligationFor(
             demand,
             msg.sender,
-            msg.sender
+            buyAttestation // Reference the escrow this payment is for
         );
 
         if (!erc1155Escrow.collectEscrow(buyAttestation, sellAttestation)) {
@@ -264,6 +309,12 @@ contract ERC721BarterUtils {
         TokenBundlePaymentObligation2.ObligationData calldata askData,
         uint64 expiration
     ) external returns (bytes32) {
+        // Pull NFT from user to BarterUtils
+        IERC721(bidToken).transferFrom(msg.sender, address(this), bidTokenId);
+
+        // Approve obligation contract to spend BarterUtils' NFT
+        IERC721(bidToken).approve(address(erc721Escrow), bidTokenId);
+
         return
             erc721Escrow.doObligationFor(
                 ERC721EscrowObligation.ObligationData({
@@ -273,7 +324,6 @@ contract ERC721BarterUtils {
                     demand: abi.encode(askData)
                 }),
                 expiration,
-                msg.sender,
                 msg.sender
             );
     }
@@ -289,10 +339,20 @@ contract ERC721BarterUtils {
             (ERC721PaymentObligation.ObligationData)
         );
 
+        // Pull NFT from user to BarterUtils
+        IERC721(demand.token).transferFrom(
+            msg.sender,
+            address(this),
+            demand.tokenId
+        );
+
+        // Approve obligation contract to spend BarterUtils' NFT
+        IERC721(demand.token).approve(address(erc721Payment), demand.tokenId);
+
         bytes32 sellAttestation = erc721Payment.doObligationFor(
             demand,
             msg.sender,
-            msg.sender
+            buyAttestation // Reference the escrow this payment is for
         );
 
         // Fix: Use bundleEscrow instead of erc721Escrow
@@ -312,6 +372,12 @@ contract ERC721BarterUtils {
         uint256 askAmount,
         uint64 expiration
     ) external returns (bytes32) {
+        // Pull NFT from user to BarterUtils
+        IERC721(bidToken).transferFrom(msg.sender, address(this), bidTokenId);
+
+        // Approve obligation contract to spend BarterUtils' NFT
+        IERC721(bidToken).approve(address(erc721Escrow), bidTokenId);
+
         return
             erc721Escrow.doObligationFor(
                 ERC721EscrowObligation.ObligationData({
@@ -326,7 +392,6 @@ contract ERC721BarterUtils {
                     )
                 }),
                 expiration,
-                msg.sender,
                 msg.sender
             );
     }
@@ -345,10 +410,20 @@ contract ERC721BarterUtils {
             (ERC721PaymentObligation.ObligationData)
         );
 
+        // Pull NFT from user to BarterUtils
+        IERC721(demand.token).transferFrom(
+            msg.sender,
+            address(this),
+            demand.tokenId
+        );
+
+        // Approve obligation contract to spend BarterUtils' NFT
+        IERC721(demand.token).approve(address(erc721Payment), demand.tokenId);
+
         bytes32 sellAttestation = erc721Payment.doObligationFor(
             demand,
             msg.sender,
-            msg.sender
+            buyAttestation // Reference the escrow this payment is for
         );
 
         if (!nativeEscrow.collectEscrow(buyAttestation, sellAttestation)) {
@@ -376,7 +451,10 @@ contract ERC721BarterUtils {
 
         bytes32 sellAttestation = nativePayment.doObligationFor{
             value: demand.amount
-        }(demand, msg.sender, msg.sender);
+        }(demand,
+                msg.sender,
+                buyAttestation // Reference the escrow this payment is for
+            );
 
         if (!erc721Escrow.collectEscrow(buyAttestation, sellAttestation)) {
             revert CouldntCollectEscrow();

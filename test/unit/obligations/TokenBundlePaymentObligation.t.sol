@@ -153,7 +153,7 @@ contract TokenBundlePaymentObligationTest is Test {
         TokenBundlePaymentObligation.ObligationData
             memory data = createFullBundleData();
 
-        bytes32 uid = paymentObligation.doObligation(data);
+        bytes32 uid = paymentObligation.doObligation(data, bytes32(0));
         vm.stopPrank();
 
         // Verify attestation exists
@@ -189,8 +189,8 @@ contract TokenBundlePaymentObligationTest is Test {
 
         address recipient = makeAddr("recipient");
 
-        vm.prank(address(this));
-        bytes32 uid = paymentObligation.doObligationFor(data, payer, recipient);
+        vm.prank(payer);
+        bytes32 uid = paymentObligation.doObligationFor(data, recipient, bytes32(0));
 
         // Verify attestation exists
         assertNotEq(uid, bytes32(0), "Attestation should be created");
@@ -222,7 +222,7 @@ contract TokenBundlePaymentObligationTest is Test {
         TokenBundlePaymentObligation.ObligationData
             memory data = createERC20OnlyBundleData();
 
-        bytes32 uid = paymentObligation.doObligation(data);
+        bytes32 uid = paymentObligation.doObligation(data, bytes32(0));
         vm.stopPrank();
 
         // Verify attestation exists
@@ -261,7 +261,7 @@ contract TokenBundlePaymentObligationTest is Test {
         TokenBundlePaymentObligation.ObligationData
             memory data = createERC721OnlyBundleData();
 
-        bytes32 uid = paymentObligation.doObligation(data);
+        bytes32 uid = paymentObligation.doObligation(data, bytes32(0));
         vm.stopPrank();
 
         // Verify attestation exists
@@ -290,7 +290,7 @@ contract TokenBundlePaymentObligationTest is Test {
         TokenBundlePaymentObligation.ObligationData
             memory data = createERC1155OnlyBundleData();
 
-        bytes32 uid = paymentObligation.doObligation(data);
+        bytes32 uid = paymentObligation.doObligation(data, bytes32(0));
         vm.stopPrank();
 
         // Verify attestation exists
@@ -355,7 +355,7 @@ contract TokenBundlePaymentObligationTest is Test {
         vm.expectRevert(
             TokenBundlePaymentObligation.ArrayLengthMismatch.selector
         );
-        paymentObligation.doObligation(data);
+        paymentObligation.doObligation(data, bytes32(0));
         vm.stopPrank();
     }
 
@@ -393,7 +393,7 @@ contract TokenBundlePaymentObligationTest is Test {
         // The ERC20InsufficientBalance error is from OpenZeppelin 5.0
         // This is a low-level error from the ERC20 contract itself
         vm.expectRevert();
-        paymentObligation.doObligation(data);
+        paymentObligation.doObligation(data, bytes32(0));
         vm.stopPrank();
     }
 
@@ -409,7 +409,7 @@ contract TokenBundlePaymentObligationTest is Test {
 
         TokenBundlePaymentObligation.ObligationData
             memory data = createFullBundleData();
-        bytes32 attestationId = paymentObligation.doObligation(data);
+        bytes32 attestationId = paymentObligation.doObligation(data, bytes32(0));
         vm.stopPrank();
 
         Attestation memory attestation = eas.getAttestation(attestationId);

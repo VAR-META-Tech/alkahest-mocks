@@ -127,7 +127,7 @@ contract ERC20BarterUtilsCrossTokenTest is Test {
 
         // Alice makes bid
         vm.startPrank(alice);
-        bidToken.approve(address(escrowObligation), bidAmount);
+        bidToken.approve(address(barterUtils), bidAmount);
         bytes32 buyAttestation = barterUtils.buyErc721WithErc20(
             address(bidToken),
             bidAmount,
@@ -145,7 +145,8 @@ contract ERC20BarterUtilsCrossTokenTest is Test {
                 token: address(erc721Token),
                 tokenId: nftId,
                 payee: alice
-            })
+            }),
+            buyAttestation
         );
 
         // Collect payment
@@ -176,7 +177,7 @@ contract ERC20BarterUtilsCrossTokenTest is Test {
 
         // Alice makes bid
         vm.startPrank(alice);
-        bidToken.approve(address(escrowObligation), bidAmount);
+        bidToken.approve(address(barterUtils), bidAmount);
         bytes32 buyAttestation = barterUtils.buyErc1155WithErc20(
             address(bidToken),
             bidAmount,
@@ -196,7 +197,8 @@ contract ERC20BarterUtilsCrossTokenTest is Test {
                 tokenId: tokenId,
                 amount: amount,
                 payee: alice
-            })
+            }),
+            buyAttestation
         );
 
         // Collect payment
@@ -229,7 +231,7 @@ contract ERC20BarterUtilsCrossTokenTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = _getPermitSignature(
             bidToken,
             ALICE_PRIVATE_KEY,
-            address(escrowObligation),
+            address(barterUtils),
             bidAmount,
             deadline
         );
@@ -256,7 +258,8 @@ contract ERC20BarterUtilsCrossTokenTest is Test {
                 token: address(erc721Token),
                 tokenId: nftId,
                 payee: alice
-            })
+            }),
+            buyAttestation
         );
 
         bool success = escrowObligation.collectEscrow(

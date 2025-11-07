@@ -76,7 +76,6 @@ contract NativeTokenBarterUtils {
                     )
                 }),
                 expiration,
-                msg.sender,
                 msg.sender
             );
     }
@@ -87,7 +86,10 @@ contract NativeTokenBarterUtils {
     ) internal returns (bytes32) {
         bytes32 sellAttestation = nativePayment.doObligationFor{
             value: demand.amount
-        }(demand, msg.sender, msg.sender);
+        }(demand,
+                msg.sender,
+                buyAttestation // Reference the escrow this payment is for
+            );
 
         if (!nativeEscrow.collectEscrow(buyAttestation, sellAttestation)) {
             revert CouldntCollectEscrow();
@@ -142,7 +144,6 @@ contract NativeTokenBarterUtils {
                     )
                 }),
                 expiration,
-                msg.sender,
                 msg.sender
             );
     }
@@ -165,7 +166,10 @@ contract NativeTokenBarterUtils {
 
         bytes32 sellAttestation = nativePayment.doObligationFor{
             value: demand.amount
-        }(demand, msg.sender, msg.sender);
+        }(demand,
+                msg.sender,
+                buyAttestation // Reference the escrow this payment is for
+            );
 
         if (!erc20Escrow.collectEscrow(buyAttestation, sellAttestation)) {
             revert CouldntCollectEscrow();
@@ -196,7 +200,6 @@ contract NativeTokenBarterUtils {
                     )
                 }),
                 expiration,
-                msg.sender,
                 msg.sender
             );
     }
@@ -219,7 +222,10 @@ contract NativeTokenBarterUtils {
 
         bytes32 sellAttestation = nativePayment.doObligationFor{
             value: demand.amount
-        }(demand, msg.sender, msg.sender);
+        }(demand,
+                msg.sender,
+                buyAttestation // Reference the escrow this payment is for
+            );
 
         if (!erc721Escrow.collectEscrow(buyAttestation, sellAttestation)) {
             revert CouldntCollectEscrow();
@@ -252,7 +258,6 @@ contract NativeTokenBarterUtils {
                     )
                 }),
                 expiration,
-                msg.sender,
                 msg.sender
             );
     }
@@ -275,7 +280,10 @@ contract NativeTokenBarterUtils {
 
         bytes32 sellAttestation = nativePayment.doObligationFor{
             value: demand.amount
-        }(demand, msg.sender, msg.sender);
+        }(demand,
+                msg.sender,
+                buyAttestation // Reference the escrow this payment is for
+            );
 
         if (!erc1155Escrow.collectEscrow(buyAttestation, sellAttestation)) {
             revert CouldntCollectEscrow();
@@ -299,7 +307,6 @@ contract NativeTokenBarterUtils {
                     demand: abi.encode(askData)
                 }),
                 expiration,
-                msg.sender,
                 msg.sender
             );
     }
@@ -317,7 +324,10 @@ contract NativeTokenBarterUtils {
 
         bytes32 sellAttestation = nativePayment.doObligationFor{
             value: demand.amount
-        }(demand, msg.sender, msg.sender);
+        }(demand,
+                msg.sender,
+                buyAttestation // Reference the escrow this payment is for
+            );
 
         if (!bundleEscrow.collectEscrow(buyAttestation, sellAttestation)) {
             revert CouldntCollectEscrow();

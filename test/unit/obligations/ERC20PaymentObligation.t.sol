@@ -60,6 +60,7 @@ contract ERC20PaymentObligationTest is Test {
 
     function testDoObligation() public {
         uint256 amount = 100 * 10 ** 18;
+        bytes32 refUID = bytes32(0); // Standalone payment, no escrow reference
 
         // Approve tokens first
         vm.startPrank(payer);
@@ -73,7 +74,7 @@ contract ERC20PaymentObligationTest is Test {
                 payee: payee
             });
 
-        bytes32 attestationId = paymentObligation.doObligation(data);
+        bytes32 attestationId = paymentObligation.doObligation(data, refUID);
         vm.stopPrank();
 
         // Verify attestation exists
@@ -87,6 +88,7 @@ contract ERC20PaymentObligationTest is Test {
             "Schema should match"
         );
         assertEq(attestation.recipient, payer, "Recipient should be the payer");
+        assertEq(attestation.refUID, refUID, "RefUID should match");
 
         // Verify token transfer
         assertEq(
@@ -104,6 +106,7 @@ contract ERC20PaymentObligationTest is Test {
     function testDoObligationFor() public {
         uint256 amount = 150 * 10 ** 18;
         address recipient = makeAddr("recipient");
+        bytes32 refUID = bytes32(0); // Standalone payment, no escrow reference
 
         // Approve tokens first
         vm.startPrank(payer);
@@ -118,11 +121,11 @@ contract ERC20PaymentObligationTest is Test {
                 payee: payee
             });
 
-        vm.prank(address(this));
+        vm.prank(payer);
         bytes32 attestationId = paymentObligation.doObligationFor(
             data,
-            payer,
-            recipient
+            recipient,
+            refUID
         );
 
         // Verify attestation exists
@@ -156,6 +159,7 @@ contract ERC20PaymentObligationTest is Test {
 
     function testCheckObligation() public {
         uint256 amount = 200 * 10 ** 18;
+        bytes32 refUID = bytes32(0); // Standalone payment for initial tests
 
         // Approve tokens first
         vm.startPrank(payer);
@@ -169,7 +173,7 @@ contract ERC20PaymentObligationTest is Test {
                 payee: payee
             });
 
-        bytes32 attestationId = paymentObligation.doObligation(data);
+        bytes32 attestationId = paymentObligation.doObligation(data, refUID);
         vm.stopPrank();
 
         // Get the attestation
@@ -186,7 +190,7 @@ contract ERC20PaymentObligationTest is Test {
         bool exactMatch = paymentObligation.checkObligation(
             attestation,
             abi.encode(exactDemand),
-            bytes32(0)
+            refUID
         );
         assertTrue(exactMatch, "Should match exact demand");
 
@@ -201,7 +205,7 @@ contract ERC20PaymentObligationTest is Test {
         bool lowerMatch = paymentObligation.checkObligation(
             attestation,
             abi.encode(lowerDemand),
-            bytes32(0)
+            refUID
         );
         assertTrue(lowerMatch, "Should match lower amount demand");
 
@@ -216,7 +220,7 @@ contract ERC20PaymentObligationTest is Test {
         bool higherMatch = paymentObligation.checkObligation(
             attestation,
             abi.encode(higherDemand),
-            bytes32(0)
+            refUID
         );
         assertFalse(higherMatch, "Should not match higher amount demand");
 
@@ -233,7 +237,7 @@ contract ERC20PaymentObligationTest is Test {
         bool differentTokenMatch = paymentObligation.checkObligation(
             attestation,
             abi.encode(differentTokenDemand),
-            bytes32(0)
+            refUID
         );
         assertFalse(
             differentTokenMatch,
@@ -252,16 +256,29 @@ contract ERC20PaymentObligationTest is Test {
         bool differentPayeeMatch = paymentObligation.checkObligation(
             attestation,
             abi.encode(differentPayeeDemand),
-            bytes32(0)
+            refUID
         );
         assertFalse(
             differentPayeeMatch,
             "Should not match different payee demand"
         );
+
+        // Test wrong refUID (should fail)
+        bytes32 wrongRefUID = bytes32(uint256(999));
+        bool wrongRefMatch = paymentObligation.checkObligation(
+            attestation,
+            abi.encode(exactDemand),
+            wrongRefUID
+        );
+        assertFalse(
+            wrongRefMatch,
+            "Should not match with wrong refUID"
+        );
     }
 
     function testInvalidPaymentReverts() public {
         uint256 amount = 2000 * 10 ** 18; // More than payer has
+        bytes32 refUID = bytes32(uint256(4)); // Mock escrow UID
 
         // Approve tokens first
         vm.startPrank(payer);
@@ -276,7 +293,7 @@ contract ERC20PaymentObligationTest is Test {
             });
 
         vm.expectRevert();
-        paymentObligation.doObligation(data);
+        paymentObligation.doObligation(data, refUID);
         vm.stopPrank();
     }
 }

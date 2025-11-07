@@ -14,8 +14,9 @@ import {TokenBundlePaymentObligation2} from "../obligations/TokenBundlePaymentOb
 import {NativeTokenEscrowObligation} from "../obligations/NativeTokenEscrowObligation.sol";
 import {NativeTokenPaymentObligation} from "../obligations/NativeTokenPaymentObligation.sol";
 import {IERC1155} from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
+import {IERC1155Receiver} from "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
 
-contract ERC1155BarterUtils {
+contract ERC1155BarterUtils is IERC1155Receiver {
     IEAS internal eas;
     ERC20EscrowObligation internal erc20Escrow;
     ERC20PaymentObligation internal erc20Payment;
@@ -68,6 +69,18 @@ contract ERC1155BarterUtils {
         uint256 askAmount,
         uint64 expiration
     ) internal returns (bytes32) {
+        // Pull ERC1155 tokens from user to BarterUtils
+        IERC1155(bidToken).safeTransferFrom(
+            msg.sender,
+            address(this),
+            bidTokenId,
+            bidAmount,
+            ""
+        );
+
+        // Approve obligation contract to spend BarterUtils' ERC1155 tokens
+        IERC1155(bidToken).setApprovalForAll(address(erc1155Escrow), true);
+
         return
             erc1155Escrow.doObligationFor(
                 ERC1155EscrowObligation.ObligationData({
@@ -85,7 +98,6 @@ contract ERC1155BarterUtils {
                     )
                 }),
                 expiration,
-                msg.sender,
                 msg.sender
             );
     }
@@ -94,10 +106,22 @@ contract ERC1155BarterUtils {
         bytes32 buyAttestation,
         ERC1155PaymentObligation.ObligationData memory demand
     ) internal returns (bytes32) {
+        // Pull ERC1155 tokens from user to BarterUtils
+        IERC1155(demand.token).safeTransferFrom(
+            msg.sender,
+            address(this),
+            demand.tokenId,
+            demand.amount,
+            ""
+        );
+
+        // Approve obligation contract to spend BarterUtils' ERC1155 tokens
+        IERC1155(demand.token).setApprovalForAll(address(erc1155Payment), true);
+
         bytes32 sellAttestation = erc1155Payment.doObligationFor(
             demand,
             msg.sender,
-            msg.sender
+            buyAttestation // Reference the escrow this payment is for
         );
 
         if (!erc1155Escrow.collectEscrow(buyAttestation, sellAttestation)) {
@@ -156,6 +180,18 @@ contract ERC1155BarterUtils {
         uint256 askAmount,
         uint64 expiration
     ) external returns (bytes32) {
+        // Pull ERC1155 tokens from user to BarterUtils
+        IERC1155(bidToken).safeTransferFrom(
+            msg.sender,
+            address(this),
+            bidTokenId,
+            bidAmount,
+            ""
+        );
+
+        // Approve obligation contract to spend BarterUtils' ERC1155 tokens
+        IERC1155(bidToken).setApprovalForAll(address(erc1155Escrow), true);
+
         return
             erc1155Escrow.doObligationFor(
                 ERC1155EscrowObligation.ObligationData({
@@ -172,7 +208,6 @@ contract ERC1155BarterUtils {
                     )
                 }),
                 expiration,
-                msg.sender,
                 msg.sender
             );
     }
@@ -193,10 +228,22 @@ contract ERC1155BarterUtils {
             (ERC1155PaymentObligation.ObligationData)
         );
 
+        // Pull ERC1155 tokens from user to BarterUtils
+        IERC1155(demand.token).safeTransferFrom(
+            msg.sender,
+            address(this),
+            demand.tokenId,
+            demand.amount,
+            ""
+        );
+
+        // Approve obligation contract to spend BarterUtils' ERC1155 tokens
+        IERC1155(demand.token).setApprovalForAll(address(erc1155Payment), true);
+
         bytes32 sellAttestation = erc1155Payment.doObligationFor(
             demand,
             msg.sender,
-            msg.sender
+            buyAttestation // Reference the escrow this payment is for
         );
 
         if (!erc20Escrow.collectEscrow(buyAttestation, sellAttestation)) {
@@ -216,6 +263,18 @@ contract ERC1155BarterUtils {
         uint256 askTokenId,
         uint64 expiration
     ) external returns (bytes32) {
+        // Pull ERC1155 tokens from user to BarterUtils
+        IERC1155(bidToken).safeTransferFrom(
+            msg.sender,
+            address(this),
+            bidTokenId,
+            bidAmount,
+            ""
+        );
+
+        // Approve obligation contract to spend BarterUtils' ERC1155 tokens
+        IERC1155(bidToken).setApprovalForAll(address(erc1155Escrow), true);
+
         return
             erc1155Escrow.doObligationFor(
                 ERC1155EscrowObligation.ObligationData({
@@ -232,7 +291,6 @@ contract ERC1155BarterUtils {
                     )
                 }),
                 expiration,
-                msg.sender,
                 msg.sender
             );
     }
@@ -253,10 +311,22 @@ contract ERC1155BarterUtils {
             (ERC1155PaymentObligation.ObligationData)
         );
 
+        // Pull ERC1155 tokens from user to BarterUtils
+        IERC1155(demand.token).safeTransferFrom(
+            msg.sender,
+            address(this),
+            demand.tokenId,
+            demand.amount,
+            ""
+        );
+
+        // Approve obligation contract to spend BarterUtils' ERC1155 tokens
+        IERC1155(demand.token).setApprovalForAll(address(erc1155Payment), true);
+
         bytes32 sellAttestation = erc1155Payment.doObligationFor(
             demand,
             msg.sender,
-            msg.sender
+            buyAttestation // Reference the escrow this payment is for
         );
 
         if (!erc721Escrow.collectEscrow(buyAttestation, sellAttestation)) {
@@ -275,6 +345,18 @@ contract ERC1155BarterUtils {
         TokenBundlePaymentObligation2.ObligationData calldata askData,
         uint64 expiration
     ) external returns (bytes32) {
+        // Pull ERC1155 tokens from user to BarterUtils
+        IERC1155(bidToken).safeTransferFrom(
+            msg.sender,
+            address(this),
+            bidTokenId,
+            bidAmount,
+            ""
+        );
+
+        // Approve obligation contract to spend BarterUtils' ERC1155 tokens
+        IERC1155(bidToken).setApprovalForAll(address(erc1155Escrow), true);
+
         return
             erc1155Escrow.doObligationFor(
                 ERC1155EscrowObligation.ObligationData({
@@ -285,7 +367,6 @@ contract ERC1155BarterUtils {
                     demand: abi.encode(askData)
                 }),
                 expiration,
-                msg.sender,
                 msg.sender
             );
     }
@@ -301,10 +382,22 @@ contract ERC1155BarterUtils {
             (ERC1155PaymentObligation.ObligationData)
         );
 
+        // Pull ERC1155 tokens from user to BarterUtils
+        IERC1155(demand.token).safeTransferFrom(
+            msg.sender,
+            address(this),
+            demand.tokenId,
+            demand.amount,
+            ""
+        );
+
+        // Approve obligation contract to spend BarterUtils' ERC1155 tokens
+        IERC1155(demand.token).setApprovalForAll(address(erc1155Payment), true);
+
         bytes32 sellAttestation = erc1155Payment.doObligationFor(
             demand,
             msg.sender,
-            msg.sender
+            buyAttestation // Reference the escrow this payment is for
         );
 
         if (!bundleEscrow.collectEscrow(buyAttestation, sellAttestation)) {
@@ -323,6 +416,18 @@ contract ERC1155BarterUtils {
         uint256 askAmount,
         uint64 expiration
     ) external returns (bytes32) {
+        // Pull ERC1155 tokens from user to BarterUtils
+        IERC1155(bidToken).safeTransferFrom(
+            msg.sender,
+            address(this),
+            bidTokenId,
+            bidAmount,
+            ""
+        );
+
+        // Approve obligation contract to spend BarterUtils' ERC1155 tokens
+        IERC1155(bidToken).setApprovalForAll(address(erc1155Escrow), true);
+
         return
             erc1155Escrow.doObligationFor(
                 ERC1155EscrowObligation.ObligationData({
@@ -338,7 +443,6 @@ contract ERC1155BarterUtils {
                     )
                 }),
                 expiration,
-                msg.sender,
                 msg.sender
             );
     }
@@ -357,10 +461,22 @@ contract ERC1155BarterUtils {
             (ERC1155PaymentObligation.ObligationData)
         );
 
+        // Pull ERC1155 tokens from user to BarterUtils
+        IERC1155(demand.token).safeTransferFrom(
+            msg.sender,
+            address(this),
+            demand.tokenId,
+            demand.amount,
+            ""
+        );
+
+        // Approve obligation contract to spend BarterUtils' ERC1155 tokens
+        IERC1155(demand.token).setApprovalForAll(address(erc1155Payment), true);
+
         bytes32 sellAttestation = erc1155Payment.doObligationFor(
             demand,
             msg.sender,
-            msg.sender
+            buyAttestation // Reference the escrow this payment is for
         );
 
         if (!nativeEscrow.collectEscrow(buyAttestation, sellAttestation)) {
@@ -388,12 +504,42 @@ contract ERC1155BarterUtils {
 
         bytes32 sellAttestation = nativePayment.doObligationFor{
             value: demand.amount
-        }(demand, msg.sender, msg.sender);
+        }(demand,
+                msg.sender,
+                buyAttestation // Reference the escrow this payment is for
+            );
 
         if (!erc1155Escrow.collectEscrow(buyAttestation, sellAttestation)) {
             revert CouldntCollectEscrow();
         }
 
         return sellAttestation;
+    }
+
+    // ERC1155 Receiver Implementation
+    function onERC1155Received(
+        address,
+        address,
+        uint256,
+        uint256,
+        bytes calldata
+    ) external pure override returns (bytes4) {
+        return this.onERC1155Received.selector;
+    }
+
+    function onERC1155BatchReceived(
+        address,
+        address,
+        uint256[] calldata,
+        uint256[] calldata,
+        bytes calldata
+    ) external pure override returns (bytes4) {
+        return this.onERC1155BatchReceived.selector;
+    }
+
+    function supportsInterface(
+        bytes4 interfaceId
+    ) external pure override returns (bool) {
+        return interfaceId == type(IERC1155Receiver).interfaceId;
     }
 }
