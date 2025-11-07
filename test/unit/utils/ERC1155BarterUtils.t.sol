@@ -822,7 +822,8 @@ contract ERC1155BarterUtilsUnitTest is Test {
                 amount: 25,
                 payee: alice
             }),
-            bob
+            bob,
+            bytes32(0)
         );
 
         // This should revert because the payment doesn't match the demand

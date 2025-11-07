@@ -141,7 +141,7 @@ contract TokenBundlePaymentObligation2Test is Test {
 
         vm.startPrank(alice);
 
-        obligation.doObligation{value: NATIVE_AMOUNT}(data);
+        obligation.doObligation{value: NATIVE_AMOUNT}(data, bytes32(0));
 
         vm.stopPrank();
 
@@ -164,7 +164,7 @@ contract TokenBundlePaymentObligation2Test is Test {
         nft2.approve(address(obligation), NFT2_ID);
         multiToken.setApprovalForAll(address(obligation), true);
 
-        obligation.doObligation{value: NATIVE_AMOUNT}(data);
+        obligation.doObligation{value: NATIVE_AMOUNT}(data, bytes32(0));
 
         vm.stopPrank();
 
@@ -191,7 +191,7 @@ contract TokenBundlePaymentObligation2Test is Test {
         nft2.approve(address(obligation), NFT2_ID + 10);
         multiToken.setApprovalForAll(address(obligation), true);
 
-        obligation.doObligationFor{value: NATIVE_AMOUNT}(data, charlie);
+        obligation.doObligationFor{value: NATIVE_AMOUNT}(data, charlie, bytes32(0));
 
         vm.stopPrank();
 
@@ -229,7 +229,7 @@ contract TokenBundlePaymentObligation2Test is Test {
 
         vm.startPrank(alice);
 
-        obligation.doObligation{value: totalSent}(data);
+        obligation.doObligation{value: totalSent}(data, bytes32(0));
 
         vm.stopPrank();
 
@@ -252,7 +252,7 @@ contract TokenBundlePaymentObligation2Test is Test {
             )
         );
 
-        obligation.doObligation{value: NATIVE_AMOUNT - 0.1 ether}(data);
+        obligation.doObligation{value: NATIVE_AMOUNT - 0.1 ether}(data, bytes32(0));
 
         vm.stopPrank();
     }
@@ -286,7 +286,7 @@ contract TokenBundlePaymentObligation2Test is Test {
             )
         );
 
-        obligation.doObligation{value: NATIVE_AMOUNT}(data);
+        obligation.doObligation{value: NATIVE_AMOUNT}(data, bytes32(0));
 
         vm.stopPrank();
     }
@@ -302,7 +302,7 @@ contract TokenBundlePaymentObligation2Test is Test {
         vm.expectRevert(
             TokenBundlePaymentObligation2.ArrayLengthMismatch.selector
         );
-        obligation.doObligation(data1);
+        obligation.doObligation(data1, bytes32(0));
 
         // ERC721 mismatch
         TokenBundlePaymentObligation2.ObligationData memory data2;
@@ -313,7 +313,7 @@ contract TokenBundlePaymentObligation2Test is Test {
         vm.expectRevert(
             TokenBundlePaymentObligation2.ArrayLengthMismatch.selector
         );
-        obligation.doObligation(data2);
+        obligation.doObligation(data2, bytes32(0));
 
         // ERC1155 mismatch
         TokenBundlePaymentObligation2.ObligationData memory data3;
@@ -325,7 +325,7 @@ contract TokenBundlePaymentObligation2Test is Test {
         vm.expectRevert(
             TokenBundlePaymentObligation2.ArrayLengthMismatch.selector
         );
-        obligation.doObligation(data3);
+        obligation.doObligation(data3, bytes32(0));
 
         vm.stopPrank();
     }

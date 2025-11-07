@@ -56,7 +56,7 @@ contract NativeTokenPaymentObligationTest is Test {
         emit PaymentMade(bytes32(0), buyer);
 
         vm.prank(buyer);
-        bytes32 uid = paymentObligation.doObligation{value: AMOUNT}(data);
+        bytes32 uid = paymentObligation.doObligation{value: AMOUNT}(data, bytes32(0));
 
         // Check balances
         assertEq(buyer.balance, buyerBalanceBefore - AMOUNT);
@@ -91,7 +91,8 @@ contract NativeTokenPaymentObligationTest is Test {
         vm.prank(buyer);
         bytes32 uid = paymentObligation.doObligationFor{value: AMOUNT}(
             data,
-            randomUser
+            randomUser,
+            bytes32(0)
         );
 
         // Check balances
@@ -118,7 +119,7 @@ contract NativeTokenPaymentObligationTest is Test {
                 0.5 ether
             )
         );
-        paymentObligation.doObligation{value: 0.5 ether}(data);
+        paymentObligation.doObligation{value: 0.5 ether}(data, bytes32(0));
     }
 
     function testExcessPaymentRefund() public {
@@ -135,7 +136,7 @@ contract NativeTokenPaymentObligationTest is Test {
         uint256 sellerBalanceBefore = seller.balance;
 
         vm.prank(buyer);
-        bytes32 uid = paymentObligation.doObligation{value: totalPayment}(data);
+        bytes32 uid = paymentObligation.doObligation{value: totalPayment}(data, bytes32(0));
 
         // Check balances - buyer should get refund
         assertEq(buyer.balance, buyerBalanceBefore - AMOUNT);
@@ -165,7 +166,7 @@ contract NativeTokenPaymentObligationTest is Test {
                 AMOUNT
             )
         );
-        paymentObligation.doObligation{value: AMOUNT}(data);
+        paymentObligation.doObligation{value: AMOUNT}(data, bytes32(0));
     }
 
     function testCheckObligation() public {
@@ -176,7 +177,7 @@ contract NativeTokenPaymentObligationTest is Test {
             });
 
         vm.prank(buyer);
-        bytes32 uid = paymentObligation.doObligation{value: AMOUNT}(data);
+        bytes32 uid = paymentObligation.doObligation{value: AMOUNT}(data, bytes32(0));
 
         Attestation memory attestation = eas.getAttestation(uid);
 
@@ -297,7 +298,7 @@ contract NativeTokenPaymentObligationTest is Test {
         uint256 sellerBalanceBefore = seller.balance;
 
         vm.prank(buyer);
-        bytes32 uid = paymentObligation.doObligation(data);
+        bytes32 uid = paymentObligation.doObligation(data, bytes32(0));
 
         // Check balances remain unchanged
         assertEq(buyer.balance, buyerBalanceBefore);
@@ -319,10 +320,10 @@ contract NativeTokenPaymentObligationTest is Test {
 
         // Make multiple payments
         vm.prank(buyer);
-        paymentObligation.doObligation{value: AMOUNT}(data);
+        paymentObligation.doObligation{value: AMOUNT}(data, bytes32(0));
 
         vm.prank(randomUser);
-        paymentObligation.doObligation{value: AMOUNT}(data);
+        paymentObligation.doObligation{value: AMOUNT}(data, bytes32(0));
 
         // Check seller received both payments
         assertEq(seller.balance, sellerBalanceBefore + 2 * AMOUNT);
@@ -345,6 +346,6 @@ contract RevertingSender {
         NativeTokenPaymentObligation.ObligationData memory data,
         uint256 value
     ) external payable {
-        obligation.doObligation{value: value}(data);
+        obligation.doObligation{value: value}(data, bytes32(0));
     }
 }

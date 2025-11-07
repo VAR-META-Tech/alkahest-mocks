@@ -53,27 +53,29 @@ contract TokenBundlePaymentObligation2 is BaseObligation, IArbiter {
     {}
 
     function doObligation(
-        ObligationData calldata data
+        ObligationData calldata data,
+        bytes32 refUID
     ) public payable returns (bytes32 uid_) {
         bytes memory encodedData = abi.encode(data);
         uid_ = _doObligationForRaw(
             encodedData,
             0,
             msg.sender,
-            bytes32(0)
+            refUID
         );
     }
 
     function doObligationFor(
         ObligationData calldata data,
-        address recipient
+        address recipient,
+        bytes32 refUID
     ) public payable returns (bytes32 uid_) {
         bytes memory encodedData = abi.encode(data);
         uid_ = _doObligationForRaw(
             encodedData,
             0,
             recipient,
-            bytes32(0)
+            refUID
         );
     }
 
@@ -186,9 +188,12 @@ contract TokenBundlePaymentObligation2 is BaseObligation, IArbiter {
     function checkObligation(
         Attestation memory obligation,
         bytes memory demand,
-        bytes32 /* counteroffer */
+        bytes32 counteroffer
     ) public view override returns (bool) {
         if (!obligation._checkIntrinsic(ATTESTATION_SCHEMA)) return false;
+
+        // Check that the payment references the correct escrow
+        if (obligation.refUID != counteroffer) return false;
 
         ObligationData memory payment = abi.decode(
             obligation.data,

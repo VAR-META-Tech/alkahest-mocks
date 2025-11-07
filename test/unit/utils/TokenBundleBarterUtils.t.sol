@@ -507,7 +507,7 @@ contract TokenBundleBarterUtilsUnitTest is Test {
         erc1155TokenB.setApprovalForAll(address(barterUtils), true);
 
         bytes32 payAttestation = barterUtils.permitAndPayBundle(
-            bobBundle,
+            bobBundle, bytes32(0),
             permits
         );
         vm.stopPrank();

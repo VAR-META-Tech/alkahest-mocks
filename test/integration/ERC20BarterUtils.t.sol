@@ -255,6 +255,7 @@ contract ERC20BarterUtilsIntegrationTest is Test {
             address(erc1155TokenB),
             askAmount,
             alice, // payee
+            buyAttestation, // refUID
             deadline,
             v2,
             r2,

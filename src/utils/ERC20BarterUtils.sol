@@ -106,6 +106,7 @@ contract ERC20BarterUtils {
         address token,
         uint256 amount,
         address payee,
+        bytes32 refUID,
         uint256 deadline,
         uint8 v,
         bytes32 r,
@@ -135,7 +136,8 @@ contract ERC20BarterUtils {
                     amount: amount,
                     payee: payee
                 }),
-                msg.sender
+                msg.sender,
+                refUID
             );
     }
 
@@ -183,7 +185,8 @@ contract ERC20BarterUtils {
 
         bytes32 sellAttestation = erc20Payment.doObligationFor(
             demand,
-            msg.sender
+            msg.sender,
+            buyAttestation // Reference the escrow this payment is for
         );
 
         if (!erc20Escrow.collectEscrow(buyAttestation, sellAttestation)) {
@@ -363,7 +366,8 @@ contract ERC20BarterUtils {
 
         bytes32 sellAttestation = erc20Payment.doObligationFor(
             demand,
-            msg.sender
+            msg.sender,
+            buyAttestation // Reference the escrow this payment is for
         );
 
         if (!erc721Escrow.collectEscrow(buyAttestation, sellAttestation)) {
@@ -517,7 +521,8 @@ contract ERC20BarterUtils {
 
         bytes32 sellAttestation = erc20Payment.doObligationFor(
             demand,
-            msg.sender
+            msg.sender,
+            buyAttestation // Reference the escrow this payment is for
         );
 
         if (!erc1155Escrow.collectEscrow(buyAttestation, sellAttestation)) {
@@ -670,7 +675,8 @@ contract ERC20BarterUtils {
 
         bytes32 sellAttestation = erc20Payment.doObligationFor(
             demand,
-            msg.sender
+            msg.sender,
+            buyAttestation // Reference the escrow this payment is for
         );
 
         if (!bundleEscrow.collectEscrow(buyAttestation, sellAttestation)) {
@@ -804,7 +810,8 @@ contract ERC20BarterUtils {
 
         bytes32 sellAttestation = erc20Payment.doObligationFor(
             demand,
-            msg.sender
+            msg.sender,
+            buyAttestation // Reference the escrow this payment is for
         );
 
         if (!nativeEscrow.collectEscrow(buyAttestation, sellAttestation)) {

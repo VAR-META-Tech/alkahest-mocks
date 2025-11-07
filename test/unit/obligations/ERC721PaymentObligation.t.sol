@@ -77,7 +77,7 @@ contract ERC721PaymentObligationTest is Test {
                 payee: payee
             });
 
-        bytes32 attestationId = paymentObligation.doObligation(data);
+        bytes32 attestationId = paymentObligation.doObligation(data, bytes32(0));
         vm.stopPrank();
 
         // Verify attestation exists
@@ -119,7 +119,8 @@ contract ERC721PaymentObligationTest is Test {
         vm.prank(payer);
         bytes32 attestationId = paymentObligation.doObligationFor(
             data,
-            recipient
+            recipient,
+            bytes32(0)
         );
 
         // Verify attestation exists
@@ -158,7 +159,7 @@ contract ERC721PaymentObligationTest is Test {
                 payee: payee
             });
 
-        bytes32 attestationId = paymentObligation.doObligation(data);
+        bytes32 attestationId = paymentObligation.doObligation(data, bytes32(0));
         vm.stopPrank();
 
         // Get the attestation
@@ -253,7 +254,7 @@ contract ERC721PaymentObligationTest is Test {
                 payee: payee
             });
 
-        bytes32 attestationId = paymentObligation.doObligation(data);
+        bytes32 attestationId = paymentObligation.doObligation(data, bytes32(0));
         vm.stopPrank();
 
         // Get the attestation
@@ -295,6 +296,6 @@ contract ERC721PaymentObligationTest is Test {
         // Should revert because the token transfer will fail
         vm.prank(otherOwner);
         vm.expectRevert();
-        paymentObligation.doObligationFor(data, otherOwner);
+        paymentObligation.doObligationFor(data, otherOwner, bytes32(0));
     }
 }

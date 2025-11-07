@@ -145,7 +145,8 @@ contract ERC20BarterUtilsCrossTokenTest is Test {
                 token: address(erc721Token),
                 tokenId: nftId,
                 payee: alice
-            })
+            }),
+            buyAttestation
         );
 
         // Collect payment
@@ -196,7 +197,8 @@ contract ERC20BarterUtilsCrossTokenTest is Test {
                 tokenId: tokenId,
                 amount: amount,
                 payee: alice
-            })
+            }),
+            buyAttestation
         );
 
         // Collect payment
@@ -256,7 +258,8 @@ contract ERC20BarterUtilsCrossTokenTest is Test {
                 token: address(erc721Token),
                 tokenId: nftId,
                 payee: alice
-            })
+            }),
+            buyAttestation
         );
 
         bool success = escrowObligation.collectEscrow(

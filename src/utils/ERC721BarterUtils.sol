@@ -107,7 +107,8 @@ contract ERC721BarterUtils {
 
         bytes32 sellAttestation = erc721Payment.doObligationFor(
             demand,
-            msg.sender
+            msg.sender,
+            buyAttestation // Reference the escrow this payment is for
         );
 
         if (!erc721Escrow.collectEscrow(buyAttestation, sellAttestation)) {
@@ -214,7 +215,8 @@ contract ERC721BarterUtils {
 
         bytes32 sellAttestation = erc721Payment.doObligationFor(
             demand,
-            msg.sender
+            msg.sender,
+            buyAttestation // Reference the escrow this payment is for
         );
 
         if (!erc20Escrow.collectEscrow(buyAttestation, sellAttestation)) {
@@ -288,7 +290,8 @@ contract ERC721BarterUtils {
 
         bytes32 sellAttestation = erc721Payment.doObligationFor(
             demand,
-            msg.sender
+            msg.sender,
+            buyAttestation // Reference the escrow this payment is for
         );
 
         if (!erc1155Escrow.collectEscrow(buyAttestation, sellAttestation)) {
@@ -348,7 +351,8 @@ contract ERC721BarterUtils {
 
         bytes32 sellAttestation = erc721Payment.doObligationFor(
             demand,
-            msg.sender
+            msg.sender,
+            buyAttestation // Reference the escrow this payment is for
         );
 
         // Fix: Use bundleEscrow instead of erc721Escrow
@@ -418,7 +422,8 @@ contract ERC721BarterUtils {
 
         bytes32 sellAttestation = erc721Payment.doObligationFor(
             demand,
-            msg.sender
+            msg.sender,
+            buyAttestation // Reference the escrow this payment is for
         );
 
         if (!nativeEscrow.collectEscrow(buyAttestation, sellAttestation)) {
@@ -447,7 +452,8 @@ contract ERC721BarterUtils {
         bytes32 sellAttestation = nativePayment.doObligationFor{
             value: demand.amount
         }(demand,
-                msg.sender
+                msg.sender,
+                buyAttestation // Reference the escrow this payment is for
             );
 
         if (!erc721Escrow.collectEscrow(buyAttestation, sellAttestation)) {

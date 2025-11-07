@@ -294,6 +294,7 @@ contract ERC20BarterUtilsUnitTest is Test {
             address(erc20TokenA),
             amount,
             bob,
+            bytes32(0),
             deadline,
             v,
             r,
@@ -833,7 +834,8 @@ contract ERC20BarterUtilsUnitTest is Test {
             NativeTokenPaymentObligation.ObligationData({
                 amount: ethAmount,
                 payee: alice
-            })
+            }),
+            escrowId
         );
 
         // Collect the escrow through the ERC20 escrow contract

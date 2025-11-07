@@ -73,6 +73,7 @@ contract TokenBundleBarterUtils is IERC1155Receiver {
 
     function permitAndPayBundle(
         TokenBundlePaymentObligation2.ObligationData calldata data,
+        bytes32 refUID,
         ERC20PermitSignature[] calldata permits
     ) external payable returns (bytes32) {
         if (permits.length != data.erc20Tokens.length)
@@ -99,7 +100,8 @@ contract TokenBundleBarterUtils is IERC1155Receiver {
 
         return bundlePayment.doObligationFor{value: data.nativeAmount}(
             data,
-            msg.sender
+            msg.sender,
+            refUID
         );
     }
 
@@ -145,7 +147,7 @@ contract TokenBundleBarterUtils is IERC1155Receiver {
 
         bytes32 sellAttestation = bundlePayment.doObligationFor{
             value: demand.nativeAmount
-        }(demand, msg.sender);
+        }(demand, msg.sender, buyAttestation);
 
         if (!bundleEscrow.collectEscrow(buyAttestation, sellAttestation)) {
             revert CouldntCollectEscrow();
