@@ -51,6 +51,9 @@ contract ERC20EscrowObligation is BaseEscrowObligation, IArbiter {
     function _lockEscrow(bytes memory data, address from) internal override {
         ObligationData memory decoded = abi.decode(data, (ObligationData));
 
+        // Check balance before transfer
+        uint256 balanceBefore = IERC20(decoded.token).balanceOf(address(this));
+
         bool success;
         try
             IERC20(decoded.token).transferFrom(
@@ -64,7 +67,11 @@ contract ERC20EscrowObligation is BaseEscrowObligation, IArbiter {
             success = false;
         }
 
-        if (!success) {
+        // Check balance after transfer
+        uint256 balanceAfter = IERC20(decoded.token).balanceOf(address(this));
+
+        // Verify the actual amount transferred
+        if (!success || balanceAfter < balanceBefore + decoded.amount) {
             revert ERC20TransferFailed(
                 decoded.token,
                 from,
@@ -85,6 +92,9 @@ contract ERC20EscrowObligation is BaseEscrowObligation, IArbiter {
             (ObligationData)
         );
 
+        // Check balance before transfer
+        uint256 balanceBefore = IERC20(decoded.token).balanceOf(to);
+
         bool success;
         try IERC20(decoded.token).transfer(to, decoded.amount) returns (
             bool result
@@ -94,7 +104,11 @@ contract ERC20EscrowObligation is BaseEscrowObligation, IArbiter {
             success = false;
         }
 
-        if (!success) {
+        // Check balance after transfer
+        uint256 balanceAfter = IERC20(decoded.token).balanceOf(to);
+
+        // Verify the actual amount transferred
+        if (!success || balanceAfter < balanceBefore + decoded.amount) {
             revert ERC20TransferFailed(
                 decoded.token,
                 address(this),
