@@ -1,23 +1,30 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import {BaseEscrowObligation} from "../BaseEscrowObligation.sol";
-import {IArbiter} from "../IArbiter.sol";
-import {ArbiterUtils} from "../ArbiterUtils.sol";
+import {BaseEscrowObligation} from "../../../BaseEscrowObligation.sol";
+import {IArbiter} from "../../../IArbiter.sol";
+import {ArbiterUtils} from "../../../ArbiterUtils.sol";
 import {Attestation} from "@eas/Common.sol";
-import {IEAS, AttestationRequest, AttestationRequestData} from "@eas/IEAS.sol";
+import {IEAS} from "@eas/IEAS.sol";
 import {ISchemaRegistry} from "@eas/ISchemaRegistry.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-contract AttestationEscrowObligation2 is BaseEscrowObligation, IArbiter {
+contract ERC20EscrowObligation is BaseEscrowObligation, IArbiter {
     using ArbiterUtils for Attestation;
-
-    bytes32 public immutable VALIDATION_SCHEMA;
 
     struct ObligationData {
         address arbiter;
         bytes demand;
-        bytes32 attestationUid; // Reference to the pre-made attestation
+        address token;
+        uint256 amount;
     }
+
+    error ERC20TransferFailed(
+        address token,
+        address from,
+        address to,
+        uint256 amount
+    );
 
     constructor(
         IEAS _eas,
@@ -26,19 +33,13 @@ contract AttestationEscrowObligation2 is BaseEscrowObligation, IArbiter {
         BaseEscrowObligation(
             _eas,
             _schemaRegistry,
-            "address arbiter, bytes demand, bytes32 attestationUid",
+            "address arbiter, bytes demand, address token, uint256 amount",
             true
         )
-    {
-        // Register the validation schema
-        VALIDATION_SCHEMA = _schemaRegistry.register(
-            "bytes32 validatedAttestationUid",
-            this,
-            true
-        );
-    }
+    {}
 
     // Extract arbiter and demand from encoded data
+
     function extractArbiterAndDemand(
         bytes memory data
     ) public pure override returns (address arbiter, bytes memory demand) {
@@ -46,43 +47,68 @@ contract AttestationEscrowObligation2 is BaseEscrowObligation, IArbiter {
         return (decoded.arbiter, decoded.demand);
     }
 
-    // No assets to lock for attestation escrows
-    function _lockEscrow(bytes memory, address) internal override {
-        // No-op: attestations don't require locking assets
+    // Transfer tokens into escrow
+    function _lockEscrow(bytes memory data, address from) internal override {
+        ObligationData memory decoded = abi.decode(data, (ObligationData));
+
+        bool success;
+        try
+            IERC20(decoded.token).transferFrom(
+                from,
+                address(this),
+                decoded.amount
+            )
+        returns (bool result) {
+            success = result;
+        } catch {
+            success = false;
+        }
+
+        if (!success) {
+            revert ERC20TransferFailed(
+                decoded.token,
+                from,
+                address(this),
+                decoded.amount
+            );
+        }
     }
 
-    // Create validation attestation
+    // Transfer tokens to fulfiller
     function _releaseEscrow(
         bytes memory escrowData,
         address to,
-        bytes32
+        bytes32 /* fulfillmentUid */
     ) internal override returns (bytes memory) {
         ObligationData memory decoded = abi.decode(
             escrowData,
             (ObligationData)
         );
 
-        // Create validation attestation
-        bytes32 validationUid = eas.attest(
-            AttestationRequest({
-                schema: VALIDATION_SCHEMA,
-                data: AttestationRequestData({
-                    recipient: to,
-                    expirationTime: 0, // Permanent
-                    revocable: false,
-                    refUID: decoded.attestationUid,
-                    data: abi.encode(decoded.attestationUid),
-                    value: 0
-                })
-            })
-        );
+        bool success;
+        try IERC20(decoded.token).transfer(to, decoded.amount) returns (
+            bool result
+        ) {
+            success = result;
+        } catch {
+            success = false;
+        }
 
-        return abi.encode(validationUid);
+        if (!success) {
+            revert ERC20TransferFailed(
+                decoded.token,
+                address(this),
+                to,
+                decoded.amount
+            );
+        }
+
+        return ""; // Token escrows don't return anything
     }
 
-    // No assets to return for attestation escrows
-    function _returnEscrow(bytes memory, address) internal override {
-        // No-op: attestations don't require returning assets
+    // Return tokens to original owner on expiry
+    function _returnEscrow(bytes memory data, address to) internal override {
+        _releaseEscrow(data, to, bytes32(0));
     }
 
     // Implement IArbiter
@@ -93,16 +119,17 @@ contract AttestationEscrowObligation2 is BaseEscrowObligation, IArbiter {
     ) public view override returns (bool) {
         if (!obligation._checkIntrinsic(ATTESTATION_SCHEMA)) return false;
 
-        ObligationData memory escrow = abi.decode(
+        ObligationData memory payment = abi.decode(
             obligation.data,
             (ObligationData)
         );
         ObligationData memory demandData = abi.decode(demand, (ObligationData));
 
         return
-            escrow.attestationUid == demandData.attestationUid &&
-            escrow.arbiter == demandData.arbiter &&
-            keccak256(escrow.demand) == keccak256(demandData.demand);
+            payment.token == demandData.token &&
+            payment.amount >= demandData.amount &&
+            payment.arbiter == demandData.arbiter &&
+            keccak256(payment.demand) == keccak256(demandData.demand);
     }
 
     // Typed convenience methods
@@ -138,9 +165,9 @@ contract AttestationEscrowObligation2 is BaseEscrowObligation, IArbiter {
     function collectEscrow(
         bytes32 escrow,
         bytes32 fulfillment
-    ) external returns (bytes32) {
-        bytes memory result = collectEscrowRaw(escrow, fulfillment);
-        return abi.decode(result, (bytes32));
+    ) external returns (bool) {
+        collectEscrowRaw(escrow, fulfillment);
+        return true;
     }
 
     function getObligationData(

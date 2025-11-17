@@ -1,30 +1,24 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import {BaseEscrowObligation} from "../BaseEscrowObligation.sol";
-import {IArbiter} from "../IArbiter.sol";
-import {ArbiterUtils} from "../ArbiterUtils.sol";
+import {BaseEscrowObligation} from "../../../BaseEscrowObligation.sol";
+import {IArbiter} from "../../../IArbiter.sol";
+import {ArbiterUtils} from "../../../ArbiterUtils.sol";
 import {Attestation} from "@eas/Common.sol";
 import {IEAS} from "@eas/IEAS.sol";
 import {ISchemaRegistry} from "@eas/ISchemaRegistry.sol";
-import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
-contract ERC721EscrowObligation is BaseEscrowObligation, IArbiter {
+contract NativeTokenEscrowObligation is BaseEscrowObligation, IArbiter {
     using ArbiterUtils for Attestation;
 
     struct ObligationData {
         address arbiter;
         bytes demand;
-        address token;
-        uint256 tokenId;
+        uint256 amount;
     }
 
-    error ERC721TransferFailed(
-        address token,
-        address from,
-        address to,
-        uint256 tokenId
-    );
+    error InsufficientPayment(uint256 expected, uint256 received);
+    error NativeTokenTransferFailed(address to, uint256 amount);
 
     constructor(
         IEAS _eas,
@@ -33,7 +27,7 @@ contract ERC721EscrowObligation is BaseEscrowObligation, IArbiter {
         BaseEscrowObligation(
             _eas,
             _schemaRegistry,
-            "address arbiter, bytes demand, address token, uint256 tokenId",
+            "address arbiter, bytes demand, uint256 amount",
             true
         )
     {}
@@ -46,27 +40,19 @@ contract ERC721EscrowObligation is BaseEscrowObligation, IArbiter {
         return (decoded.arbiter, decoded.demand);
     }
 
-    // Transfer token into escrow
-    function _lockEscrow(bytes memory data, address from) internal override {
+    // Lock native tokens into escrow
+    function _lockEscrow(
+        bytes memory data,
+        address /* from */
+    ) internal override {
         ObligationData memory decoded = abi.decode(data, (ObligationData));
 
-        try
-            IERC721(decoded.token).transferFrom(
-                from,
-                address(this),
-                decoded.tokenId
-            )
-        {} catch {
-            revert ERC721TransferFailed(
-                decoded.token,
-                from,
-                address(this),
-                decoded.tokenId
-            );
+        if (msg.value < decoded.amount) {
+            revert InsufficientPayment(decoded.amount, msg.value);
         }
     }
 
-    // Transfer token to fulfiller
+    // Release native tokens to fulfiller
     function _releaseEscrow(
         bytes memory escrowData,
         address to,
@@ -77,25 +63,15 @@ contract ERC721EscrowObligation is BaseEscrowObligation, IArbiter {
             (ObligationData)
         );
 
-        try
-            IERC721(decoded.token).transferFrom(
-                address(this),
-                to,
-                decoded.tokenId
-            )
-        {} catch {
-            revert ERC721TransferFailed(
-                decoded.token,
-                address(this),
-                to,
-                decoded.tokenId
-            );
+        (bool success, ) = payable(to).call{value: decoded.amount}("");
+        if (!success) {
+            revert NativeTokenTransferFailed(to, decoded.amount);
         }
 
-        return "";
+        return ""; // Native token escrows don't return anything
     }
 
-    // Return token to original owner on expiry
+    // Return native tokens to original owner on expiry
     function _returnEscrow(bytes memory data, address to) internal override {
         _releaseEscrow(data, to, bytes32(0));
     }
@@ -115,8 +91,7 @@ contract ERC721EscrowObligation is BaseEscrowObligation, IArbiter {
         ObligationData memory demandData = abi.decode(demand, (ObligationData));
 
         return
-            payment.token == demandData.token &&
-            payment.tokenId == demandData.tokenId &&
+            payment.amount >= demandData.amount &&
             payment.arbiter == demandData.arbiter &&
             keccak256(payment.demand) == keccak256(demandData.demand);
     }
@@ -125,12 +100,11 @@ contract ERC721EscrowObligation is BaseEscrowObligation, IArbiter {
     function doObligation(
         ObligationData calldata data,
         uint64 expirationTime
-    ) external returns (bytes32) {
+    ) external payable returns (bytes32) {
         return
             _doObligationForRaw(
                 abi.encode(data),
                 expirationTime,
-
                 msg.sender,
                 bytes32(0)
             );
@@ -140,12 +114,11 @@ contract ERC721EscrowObligation is BaseEscrowObligation, IArbiter {
         ObligationData calldata data,
         uint64 expirationTime,
         address recipient
-    ) external returns (bytes32) {
+    ) external payable returns (bytes32) {
         return
             _doObligationForRaw(
                 abi.encode(data),
                 expirationTime,
-
                 recipient,
                 bytes32(0)
             );
@@ -171,4 +144,7 @@ contract ERC721EscrowObligation is BaseEscrowObligation, IArbiter {
     ) public pure returns (ObligationData memory) {
         return abi.decode(data, (ObligationData));
     }
+
+    // Allow contract to receive native tokens
+    receive() external payable override {}
 }

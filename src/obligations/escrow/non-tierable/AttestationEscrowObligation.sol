@@ -1,24 +1,23 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import {BaseEscrowObligation} from "../BaseEscrowObligation.sol";
-import {IArbiter} from "../IArbiter.sol";
-import {ArbiterUtils} from "../ArbiterUtils.sol";
+import {BaseEscrowObligation} from "../../../BaseEscrowObligation.sol";
+import {IArbiter} from "../../../IArbiter.sol";
+import {ArbiterUtils} from "../../../ArbiterUtils.sol";
 import {Attestation} from "@eas/Common.sol";
-import {IEAS} from "@eas/IEAS.sol";
+import {IEAS, AttestationRequest, AttestationRequestData} from "@eas/IEAS.sol";
 import {ISchemaRegistry} from "@eas/ISchemaRegistry.sol";
 
-contract NativeTokenEscrowObligation is BaseEscrowObligation, IArbiter {
+contract AttestationEscrowObligation is BaseEscrowObligation, IArbiter {
     using ArbiterUtils for Attestation;
 
     struct ObligationData {
         address arbiter;
         bytes demand;
-        uint256 amount;
+        AttestationRequest attestation;
     }
 
-    error InsufficientPayment(uint256 expected, uint256 received);
-    error NativeTokenTransferFailed(address to, uint256 amount);
+    error AttestationCreationFailed();
 
     constructor(
         IEAS _eas,
@@ -27,7 +26,7 @@ contract NativeTokenEscrowObligation is BaseEscrowObligation, IArbiter {
         BaseEscrowObligation(
             _eas,
             _schemaRegistry,
-            "address arbiter, bytes demand, uint256 amount",
+            "address arbiter, bytes demand, tuple(bytes32 schema, tuple(address recipient, uint64 expirationTime, bool revocable, bytes32 refUID, bytes data, uint256 value) data) attestation",
             true
         )
     {}
@@ -40,40 +39,35 @@ contract NativeTokenEscrowObligation is BaseEscrowObligation, IArbiter {
         return (decoded.arbiter, decoded.demand);
     }
 
-    // Lock native tokens into escrow
-    function _lockEscrow(
-        bytes memory data,
-        address /* from */
-    ) internal override {
-        ObligationData memory decoded = abi.decode(data, (ObligationData));
-
-        if (msg.value < decoded.amount) {
-            revert InsufficientPayment(decoded.amount, msg.value);
-        }
+    // No assets to lock for attestation escrows
+    function _lockEscrow(bytes memory, address) internal override {
+        // No-op: attestations don't require locking assets
     }
 
-    // Release native tokens to fulfiller
+    // Create the escrowed attestation
     function _releaseEscrow(
         bytes memory escrowData,
-        address to,
-        bytes32 /* fulfillmentUid */
+        address,
+        bytes32
     ) internal override returns (bytes memory) {
         ObligationData memory decoded = abi.decode(
             escrowData,
             (ObligationData)
         );
 
-        (bool success, ) = payable(to).call{value: decoded.amount}("");
-        if (!success) {
-            revert NativeTokenTransferFailed(to, decoded.amount);
+        bytes32 attestationUid;
+        try eas.attest(decoded.attestation) returns (bytes32 uid) {
+            attestationUid = uid;
+        } catch {
+            revert AttestationCreationFailed();
         }
 
-        return ""; // Native token escrows don't return anything
+        return abi.encode(attestationUid);
     }
 
-    // Return native tokens to original owner on expiry
-    function _returnEscrow(bytes memory data, address to) internal override {
-        _releaseEscrow(data, to, bytes32(0));
+    // No assets to return for attestation escrows
+    function _returnEscrow(bytes memory, address) internal override {
+        // No-op: attestations don't require returning assets
     }
 
     // Implement IArbiter
@@ -84,27 +78,29 @@ contract NativeTokenEscrowObligation is BaseEscrowObligation, IArbiter {
     ) public view override returns (bool) {
         if (!obligation._checkIntrinsic(ATTESTATION_SCHEMA)) return false;
 
-        ObligationData memory payment = abi.decode(
+        ObligationData memory escrow = abi.decode(
             obligation.data,
             (ObligationData)
         );
         ObligationData memory demandData = abi.decode(demand, (ObligationData));
 
         return
-            payment.amount >= demandData.amount &&
-            payment.arbiter == demandData.arbiter &&
-            keccak256(payment.demand) == keccak256(demandData.demand);
+            keccak256(abi.encode(escrow.attestation)) ==
+            keccak256(abi.encode(demandData.attestation)) &&
+            escrow.arbiter == demandData.arbiter &&
+            keccak256(escrow.demand) == keccak256(demandData.demand);
     }
 
     // Typed convenience methods
     function doObligation(
         ObligationData calldata data,
         uint64 expirationTime
-    ) external payable returns (bytes32) {
+    ) external returns (bytes32) {
         return
             _doObligationForRaw(
                 abi.encode(data),
                 expirationTime,
+
                 msg.sender,
                 bytes32(0)
             );
@@ -114,11 +110,12 @@ contract NativeTokenEscrowObligation is BaseEscrowObligation, IArbiter {
         ObligationData calldata data,
         uint64 expirationTime,
         address recipient
-    ) external payable returns (bytes32) {
+    ) external returns (bytes32) {
         return
             _doObligationForRaw(
                 abi.encode(data),
                 expirationTime,
+
                 recipient,
                 bytes32(0)
             );
@@ -127,9 +124,9 @@ contract NativeTokenEscrowObligation is BaseEscrowObligation, IArbiter {
     function collectEscrow(
         bytes32 escrow,
         bytes32 fulfillment
-    ) external returns (bool) {
-        collectEscrowRaw(escrow, fulfillment);
-        return true;
+    ) external returns (bytes32) {
+        bytes memory result = collectEscrowRaw(escrow, fulfillment);
+        return abi.decode(result, (bytes32));
     }
 
     function getObligationData(
@@ -144,7 +141,4 @@ contract NativeTokenEscrowObligation is BaseEscrowObligation, IArbiter {
     ) public pure returns (ObligationData memory) {
         return abi.decode(data, (ObligationData));
     }
-
-    // Allow contract to receive native tokens
-    receive() external payable override {}
 }

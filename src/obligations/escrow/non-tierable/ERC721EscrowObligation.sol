@@ -1,20 +1,15 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import {BaseEscrowObligation} from "../BaseEscrowObligation.sol";
-import {IArbiter} from "../IArbiter.sol";
-import {ArbiterUtils} from "../ArbiterUtils.sol";
+import {BaseEscrowObligation} from "../../../BaseEscrowObligation.sol";
+import {IArbiter} from "../../../IArbiter.sol";
+import {ArbiterUtils} from "../../../ArbiterUtils.sol";
 import {Attestation} from "@eas/Common.sol";
 import {IEAS} from "@eas/IEAS.sol";
 import {ISchemaRegistry} from "@eas/ISchemaRegistry.sol";
-import {IERC1155} from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
-import {ERC1155Holder} from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
-contract ERC1155EscrowObligation is
-    BaseEscrowObligation,
-    IArbiter,
-    ERC1155Holder
-{
+contract ERC721EscrowObligation is BaseEscrowObligation, IArbiter {
     using ArbiterUtils for Attestation;
 
     struct ObligationData {
@@ -22,15 +17,13 @@ contract ERC1155EscrowObligation is
         bytes demand;
         address token;
         uint256 tokenId;
-        uint256 amount;
     }
 
-    error ERC1155TransferFailed(
+    error ERC721TransferFailed(
         address token,
         address from,
         address to,
-        uint256 tokenId,
-        uint256 amount
+        uint256 tokenId
     );
 
     constructor(
@@ -40,7 +33,7 @@ contract ERC1155EscrowObligation is
         BaseEscrowObligation(
             _eas,
             _schemaRegistry,
-            "address arbiter, bytes demand, address token, uint256 tokenId, uint256 amount",
+            "address arbiter, bytes demand, address token, uint256 tokenId",
             true
         )
     {}
@@ -53,32 +46,27 @@ contract ERC1155EscrowObligation is
         return (decoded.arbiter, decoded.demand);
     }
 
-    // Transfer tokens into escrow
+    // Transfer token into escrow
     function _lockEscrow(bytes memory data, address from) internal override {
         ObligationData memory decoded = abi.decode(data, (ObligationData));
 
         try
-            IERC1155(decoded.token).safeTransferFrom(
+            IERC721(decoded.token).transferFrom(
                 from,
                 address(this),
-                decoded.tokenId,
-                decoded.amount,
-                ""
+                decoded.tokenId
             )
-        {
-            // Transfer succeeded
-        } catch {
-            revert ERC1155TransferFailed(
+        {} catch {
+            revert ERC721TransferFailed(
                 decoded.token,
                 from,
                 address(this),
-                decoded.tokenId,
-                decoded.amount
+                decoded.tokenId
             );
         }
     }
 
-    // Transfer tokens to fulfiller
+    // Transfer token to fulfiller
     function _releaseEscrow(
         bytes memory escrowData,
         address to,
@@ -90,29 +78,24 @@ contract ERC1155EscrowObligation is
         );
 
         try
-            IERC1155(decoded.token).safeTransferFrom(
+            IERC721(decoded.token).transferFrom(
                 address(this),
                 to,
-                decoded.tokenId,
-                decoded.amount,
-                ""
+                decoded.tokenId
             )
-        {
-            // Transfer succeeded
-        } catch {
-            revert ERC1155TransferFailed(
+        {} catch {
+            revert ERC721TransferFailed(
                 decoded.token,
                 address(this),
                 to,
-                decoded.tokenId,
-                decoded.amount
+                decoded.tokenId
             );
         }
 
-        return ""; // Token escrows don't return anything
+        return "";
     }
 
-    // Return tokens to original owner on expiry
+    // Return token to original owner on expiry
     function _returnEscrow(bytes memory data, address to) internal override {
         _releaseEscrow(data, to, bytes32(0));
     }
@@ -134,7 +117,6 @@ contract ERC1155EscrowObligation is
         return
             payment.token == demandData.token &&
             payment.tokenId == demandData.tokenId &&
-            payment.amount >= demandData.amount &&
             payment.arbiter == demandData.arbiter &&
             keccak256(payment.demand) == keccak256(demandData.demand);
     }
