@@ -2,7 +2,7 @@
 
 // This script parses the deployment output and updates the TypeScript config file
 // Usage: node update_config.js <deployment_log_file> <network> <config_file>
-// Example: node update_config.js deploy_output.txt "Base Sepolia" ../alkahest-ts/src/config.ts
+// Example: node update_config.js deploy_output.txt "Base Sepolia" ../../sdks/ts/src/config.ts
 
 const fs = require('fs');
 
@@ -15,7 +15,7 @@ if (!deployOutputFile) {
 }
 
 const network = process.argv[3] || 'Base Sepolia';
-const configFile = process.argv[4] || '../alkahest-ts/src/config.ts';
+const configFile = process.argv[4] || '../../sdks/ts/src/config.ts';
 
 // Read deployment output
 let deployOutput;

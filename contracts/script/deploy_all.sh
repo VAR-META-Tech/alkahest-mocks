@@ -32,7 +32,7 @@ if [ $? -eq 0 ]; then
 
     # Update the config file
     echo "Updating config file..."
-    node script/update_config.js "deployments/addresses_${TIMESTAMP}.txt" "Base Sepolia" "alkahest-ts/src/config.ts"
+    node script/update_config.js "deployments/addresses_${TIMESTAMP}.txt" "Base Sepolia" "../sdks/ts/src/config.ts"
 
     echo "Deployment and config update complete"
 else

@@ -5,7 +5,10 @@
 
 **Contract library and SDKs for validated peer-to-peer escrow**
 
+![Solidity](https://img.shields.io/badge/solidity-0.8.27-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
+![TypeScript](https://img.shields.io/badge/typescript-5.0+-blue.svg)
+![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)
 ![License](https://img.shields.io/badge/license-MIT-yellow.svg)
 
 </div>
@@ -18,31 +21,87 @@ These compose with each other to eventually enable trading anything for anything
 
 Learn more at [Alkahest Docs](https://www.arkhai.io/docs).
 
-## Contracts
+## Repository Structure
 
-Base contracts:
+This is a monorepo containing the Alkahest smart contracts and SDKs for multiple languages:
 
-- [IArbiter](https://github.com/CoopHive/alkahest-mocks/blob/main/src/it1_bytes_arbiters/IArbiter.sol)
-- [BaseObligation](https://github.com/CoopHive/alkahest-mocks/blob/main/src/it1_bytes_arbiters/BaseObligation.sol)
-- [IValidator](https://github.com/CoopHive/alkahest-mocks/blob/main/src/it1_bytes_arbiters/IValidator.sol)
+```
+alkahest/
+├── contracts/          # Solidity smart contracts and Foundry tooling
+│   ├── src/           # Contract source code
+│   ├── test/          # Contract tests
+│   ├── script/        # Deployment scripts
+│   └── lib/           # Dependencies (forge-std, EAS, OpenZeppelin)
+├── sdks/              # Language-specific SDKs
+│   ├── py/           # Python SDK
+│   ├── rs/           # Rust SDK
+│   └── ts/           # TypeScript SDK
+└── docs/              # Documentation
+```
 
-Implementations:
+## Quick Start
 
-- Statements:
-  - [ERC20EscrowObligation](https://github.com/CoopHive/alkahest-mocks/blob/main/src/it1_bytes_arbiters/ERC20EscrowObligation.sol)
-  - [StringResultObligation](https://github.com/CoopHive/alkahest-mocks/blob/main/src/it1_bytes_arbiters/StringResultObligation.sol)
-- Validators:
-  - [ERC20PaymentFulfillmentValidator](https://github.com/CoopHive/alkahest-mocks/blob/main/src/it1_bytes_arbiters/ERC20PaymentFulfillmentValidator.sol)
-  - [OptimisticStringValidator](https://github.com/CoopHive/alkahest-mocks/blob/main/src/it1_bytes_arbiters/OptimisticStringValidator.sol)
+### Smart Contracts
 
-## Demo
+The contracts are built with [Foundry](https://book.getfoundry.sh/).
 
-Example workflows
+```bash
+cd contracts
+forge build
+forge test
+```
 
-- Buying string uppercasing for ERC20 tokens, with optimistic mediation: [tokens for strings](https://github.com/CoopHive/alkahest-mocks/blob/main/test/TokensForStrings.t.sol)
-- Exchanging ERC20 tokens for other ERC20 tokens: [tokens for tokens](https://github.com/CoopHive/alkahest-mocks/blob/main/test/TokensForTokens.t.sol)
+See [contracts/README.md](contracts/README.md) for more details.
 
-run tests:
+### SDKs
 
-1. set `RPC_URL_MAINNET` env variable to any Ethereum mainnet RPC url - e.g. Alchemy, Infura, etc.
-2. `forge test`
+Each SDK has its own setup and usage instructions:
+
+- **Python**: See [sdks/py/README.md](sdks/py/README.md)
+- **Rust**: See [sdks/rs/README.md](sdks/rs/README.md)
+- **TypeScript**: See [sdks/ts/README.md](sdks/ts/README.md)
+
+## Documentation
+
+Comprehensive guides and tutorials are available in the [docs/](docs/) directory:
+
+- **[Escrow Flow (pt 1 - Token Trading)](<docs/Escrow%20Flow%20(pt%201%20-%20Token%20Trading).md>)** - Learn how to trade tokens using escrow
+- **[Escrow Flow (pt 2 - Job Trading)](<docs/Escrow%20Flow%20(pt%202%20-%20Job%20Trading).md>)** - Trade computational work for tokens
+- **[Escrow Flow (pt 3 - Composing Demands)](<docs/Escrow%20Flow%20(pt%203%20-%20Composing%20Demands).md>)** - Combine multiple obligations
+- **[Writing Arbiters (pt 1 - On-chain Arbiters)](<docs/Writing%20Arbiters%20(pt%201%20-%20On-chain%20Arbiters).md>)** - Create on-chain validation logic
+- **[Writing Arbiters (pt 2 - Off-chain Oracles)](<docs/Writing%20Arbiters%20(pt%202%20-%20Off-chain%20Oracles)%20(Python).md>)** - Build off-chain oracles (Python, Rust, TypeScript variants)
+- **[Writing Escrow Contracts](docs/Writing%20Escrow%20Contracts.md)** - Create custom escrow obligations
+- **[Writing Fulfillment Contracts](docs/Writing%20Fulfillment%20Contracts.md)** - Create custom payment obligations
+
+## Development
+
+### Prerequisites
+
+- [Foundry](https://book.getfoundry.sh/getting-started/installation)
+- [Node.js](https://nodejs.org/) (for TypeScript SDK and scripts)
+- [Python 3.10+](https://www.python.org/) (for Python SDK)
+- [Rust](https://www.rust-lang.org/) (for Rust SDK)
+
+### Building Everything
+
+```bash
+# Build contracts
+cd contracts && forge build
+
+# Build TypeScript SDK
+cd sdks/ts && npm install && npm run build
+
+# Build Python SDK
+cd sdks/py && pip install -e .
+
+# Build Rust SDK
+cd sdks/rs && cargo build
+```
+
+## Contributing
+
+Contributions are welcome! Please check the individual README files in each directory for specific contribution guidelines.
+
+## License
+
+MIT
