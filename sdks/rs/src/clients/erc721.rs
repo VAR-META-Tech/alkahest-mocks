@@ -1,4 +1,5 @@
 use alloy::primitives::{Address, Bytes, FixedBytes};
+use alloy::providers::Provider;
 use alloy::rpc::types::TransactionReceipt;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol_types::SolValue as _;
@@ -11,7 +12,7 @@ use crate::types::{
     ApprovalPurpose, ArbiterData, DecodedAttestation, Erc20Data, Erc721Data, Erc1155Data,
     TokenBundleData,
 };
-use crate::types::{ProviderContext, WalletProvider};
+use crate::types::{ProviderContext, SharedWalletProvider};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,7 +33,7 @@ pub struct Erc721Addresses {
 #[derive(Clone)]
 pub struct Erc721Module {
     signer: PrivateKeySigner,
-    wallet_provider: WalletProvider,
+    wallet_provider: SharedWalletProvider,
 
     pub addresses: Erc721Addresses,
 }
@@ -81,7 +82,7 @@ impl Erc721Module {
     /// * `Result<Self>` - The initialized client instance
     pub fn new(
         signer: PrivateKeySigner,
-        wallet_provider: WalletProvider,
+        wallet_provider: SharedWalletProvider,
         addresses: Option<Erc721Addresses>,
     ) -> eyre::Result<Self> {
         Ok(Erc721Module {
@@ -130,7 +131,7 @@ impl Erc721Module {
         &self,
         uid: FixedBytes<32>,
     ) -> eyre::Result<DecodedAttestation<contracts::ERC721EscrowObligation::ObligationData>> {
-        let eas_contract = contracts::IEAS::new(self.addresses.eas, &self.wallet_provider);
+        let eas_contract = contracts::IEAS::new(self.addresses.eas, &*self.wallet_provider);
 
         let attestation = eas_contract.getAttestation(uid).call().await?;
         let obligation_data =
@@ -146,7 +147,7 @@ impl Erc721Module {
         &self,
         uid: FixedBytes<32>,
     ) -> eyre::Result<DecodedAttestation<contracts::ERC721PaymentObligation::ObligationData>> {
-        let eas_contract = contracts::IEAS::new(self.addresses.eas, &self.wallet_provider);
+        let eas_contract = contracts::IEAS::new(self.addresses.eas, &*self.wallet_provider);
 
         let attestation = eas_contract.getAttestation(uid).call().await?;
         let obligation_data =
@@ -171,7 +172,7 @@ impl Erc721Module {
         token: &Erc721Data,
         purpose: ApprovalPurpose,
     ) -> eyre::Result<TransactionReceipt> {
-        let erc721_contract = contracts::IERC721::new(token.address, &self.wallet_provider);
+        let erc721_contract = contracts::IERC721::new(token.address, &*self.wallet_provider);
 
         let to = match purpose {
             ApprovalPurpose::Escrow => self.addresses.escrow_obligation,
@@ -201,7 +202,7 @@ impl Erc721Module {
         token_contract: Address,
         purpose: ApprovalPurpose,
     ) -> eyre::Result<TransactionReceipt> {
-        let erc721_contract = contracts::IERC721::new(token_contract, &self.wallet_provider);
+        let erc721_contract = contracts::IERC721::new(token_contract, &*self.wallet_provider);
 
         let to = match purpose {
             ApprovalPurpose::Escrow => self.addresses.escrow_obligation,
@@ -231,7 +232,7 @@ impl Erc721Module {
         token_contract: Address,
         purpose: ApprovalPurpose,
     ) -> eyre::Result<TransactionReceipt> {
-        let erc721_contract = contracts::IERC721::new(token_contract, &self.wallet_provider);
+        let erc721_contract = contracts::IERC721::new(token_contract, &*self.wallet_provider);
 
         let to = match purpose {
             ApprovalPurpose::Escrow => self.addresses.escrow_obligation,
@@ -263,7 +264,7 @@ impl Erc721Module {
     ) -> eyre::Result<TransactionReceipt> {
         let escrow_contract = contracts::ERC721EscrowObligation::new(
             self.addresses.escrow_obligation,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = escrow_contract
@@ -289,7 +290,7 @@ impl Erc721Module {
     ) -> eyre::Result<TransactionReceipt> {
         let escrow_contract = contracts::ERC721EscrowObligation::new(
             self.addresses.escrow_obligation,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = escrow_contract
@@ -319,7 +320,7 @@ impl Erc721Module {
     ) -> eyre::Result<TransactionReceipt> {
         let escrow_obligation_contract = contracts::ERC721EscrowObligation::new(
             self.addresses.escrow_obligation,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = escrow_obligation_contract
@@ -355,7 +356,7 @@ impl Erc721Module {
     ) -> eyre::Result<TransactionReceipt> {
         let payment_obligation_contract = contracts::ERC721PaymentObligation::new(
             self.addresses.payment_obligation,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = payment_obligation_contract
@@ -388,7 +389,7 @@ impl Erc721Module {
         expiration: u64,
     ) -> eyre::Result<TransactionReceipt> {
         let barter_utils_contract =
-            contracts::ERC721BarterUtils::new(self.addresses.barter_utils, &self.wallet_provider);
+            contracts::ERC721BarterUtils::new(self.addresses.barter_utils, &*self.wallet_provider);
 
         let receipt = barter_utils_contract
             .buyErc721ForErc721(bid.address, bid.id, ask.address, ask.id, expiration)
@@ -412,7 +413,7 @@ impl Erc721Module {
         buy_attestation: FixedBytes<32>,
     ) -> eyre::Result<TransactionReceipt> {
         let barter_utils_contract =
-            contracts::ERC721BarterUtils::new(self.addresses.barter_utils, &self.wallet_provider);
+            contracts::ERC721BarterUtils::new(self.addresses.barter_utils, &*self.wallet_provider);
 
         let receipt = barter_utils_contract
             .payErc721ForErc721(buy_attestation)
@@ -442,7 +443,7 @@ impl Erc721Module {
         let barter_utils_contract =
             contracts::erc721_barter_cross_token::ERC721BarterCrossToken::new(
                 self.addresses.barter_utils,
-                &self.wallet_provider,
+                &*self.wallet_provider,
             );
 
         let receipt = barter_utils_contract
@@ -469,7 +470,7 @@ impl Erc721Module {
         let barter_utils_contract =
             contracts::erc721_barter_cross_token::ERC721BarterCrossToken::new(
                 self.addresses.barter_utils,
-                &self.wallet_provider,
+                &*self.wallet_provider,
             );
 
         let receipt = barter_utils_contract
@@ -500,7 +501,7 @@ impl Erc721Module {
         let barter_utils_contract =
             contracts::erc721_barter_cross_token::ERC721BarterCrossToken::new(
                 self.addresses.barter_utils,
-                &self.wallet_provider,
+                &*self.wallet_provider,
             );
 
         let receipt = barter_utils_contract
@@ -534,7 +535,7 @@ impl Erc721Module {
         let barter_utils_contract =
             contracts::erc721_barter_cross_token::ERC721BarterCrossToken::new(
                 self.addresses.barter_utils,
-                &self.wallet_provider,
+                &*self.wallet_provider,
             );
 
         let receipt = barter_utils_contract
@@ -565,7 +566,7 @@ impl Erc721Module {
         let barter_utils_contract =
             contracts::erc721_barter_cross_token::ERC721BarterCrossToken::new(
                 self.addresses.barter_utils,
-                &self.wallet_provider,
+                &*self.wallet_provider,
             );
 
         let receipt = barter_utils_contract
@@ -597,7 +598,7 @@ impl Erc721Module {
         let barter_utils_contract =
             contracts::erc721_barter_cross_token::ERC721BarterCrossToken::new(
                 self.addresses.barter_utils,
-                &self.wallet_provider,
+                &*self.wallet_provider,
             );
 
         let receipt = barter_utils_contract
@@ -618,7 +619,7 @@ impl AlkahestExtension for Erc721Module {
         providers: ProviderContext,
         config: Option<Self::Config>,
     ) -> eyre::Result<Self> {
-        Self::new(signer, (*providers.wallet).clone(), config)
+        Self::new(signer, providers.wallet.clone(), config)
     }
 }
 
@@ -650,7 +651,7 @@ mod tests {
 
         // Create sample obligation data
         let token_address = test.mock_addresses.erc721_a;
-        let id: U256 = 1.try_into()?;
+        let id: U256 = U256::from(1);
         let arbiter = test.addresses.erc721_addresses.payment_obligation;
         let demand = Bytes::from(vec![1, 2, 3, 4]); // sample demand data
 
@@ -683,7 +684,7 @@ mod tests {
 
         // Create sample obligation data
         let token_address = test.mock_addresses.erc721_a;
-        let id: U256 = 1.try_into()?;
+        let id: U256 = U256::from(1);
         let payee = test.alice.address();
 
         let payment_data = crate::contracts::ERC721PaymentObligation::ObligationData {
@@ -722,7 +723,7 @@ mod tests {
 
         let token = Erc721Data {
             address: test.mock_addresses.erc721_a,
-            id: 1.try_into()?,
+            id: U256::from(1),
         };
 
         // Test approve for payment
@@ -733,7 +734,7 @@ mod tests {
             .await?;
 
         // Verify approval for payment obligation
-        let payment_approved = mock_erc721_a.getApproved(1.try_into()?).call().await?;
+        let payment_approved = mock_erc721_a.getApproved(U256::from(1)).call().await?;
 
         assert_eq!(
             payment_approved,
@@ -749,7 +750,7 @@ mod tests {
             .await?;
 
         // Verify approval for escrow obligation
-        let escrow_approved = mock_erc721_a.getApproved(1.try_into()?).call().await?;
+        let escrow_approved = mock_erc721_a.getApproved(U256::from(1)).call().await?;
 
         assert_eq!(
             escrow_approved, test.addresses.erc721_addresses.escrow_obligation,
@@ -882,7 +883,7 @@ mod tests {
 
         let price = Erc721Data {
             address: test.mock_addresses.erc721_a,
-            id: 1.try_into()?,
+            id: U256::from(1),
         };
 
         // Create custom arbiter data
@@ -904,7 +905,7 @@ mod tests {
             .await?;
 
         // Verify escrow happened
-        let owner = mock_erc721_a.ownerOf(1.try_into()?).call().await?;
+        let owner = mock_erc721_a.ownerOf(U256::from(1)).call().await?;
 
         // token in escrow
         assert_eq!(
@@ -935,7 +936,7 @@ mod tests {
 
         let price = Erc721Data {
             address: test.mock_addresses.erc721_a,
-            id: 1.try_into()?,
+            id: U256::from(1),
         };
 
         // approve token for payment
@@ -952,7 +953,7 @@ mod tests {
             .await?;
 
         // Verify payment happened
-        let owner = mock_erc721_a.ownerOf(1.try_into()?).call().await?;
+        let owner = mock_erc721_a.ownerOf(U256::from(1)).call().await?;
 
         // token paid to bob
         assert_eq!(owner, test.bob.address(), "Token should be owned by Bob");
@@ -981,11 +982,11 @@ mod tests {
         // begin test
         let bid = Erc721Data {
             address: test.mock_addresses.erc721_a,
-            id: 1.try_into()?,
+            id: U256::from(1),
         };
         let ask = Erc721Data {
             address: test.mock_addresses.erc721_b,
-            id: 2.try_into()?,
+            id: U256::from(2),
         };
 
         // alice approves token for escrow
@@ -1002,7 +1003,7 @@ mod tests {
             .await?;
 
         // verify escrow
-        let owner = mock_erc721_a.ownerOf(1.try_into()?).call().await?;
+        let owner = mock_erc721_a.ownerOf(U256::from(1)).call().await?;
 
         assert_eq!(
             owner, test.addresses.erc721_addresses.escrow_obligation,
@@ -1041,11 +1042,11 @@ mod tests {
         // begin test
         let bid = Erc721Data {
             address: test.mock_addresses.erc721_a,
-            id: 1.try_into()?,
+            id: U256::from(1),
         };
         let ask = Erc721Data {
             address: test.mock_addresses.erc721_b,
-            id: 1.try_into()?,
+            id: U256::from(1),
         };
 
         // alice approves token for escrow and creates buy attestation
@@ -1076,8 +1077,8 @@ mod tests {
             .await?;
 
         // verify token transfers
-        let alice_token_b_owner = mock_erc721_b.ownerOf(1.try_into()?).call().await?;
-        let bob_token_a_owner = mock_erc721_a.ownerOf(1.try_into()?).call().await?;
+        let alice_token_b_owner = mock_erc721_b.ownerOf(U256::from(1)).call().await?;
+        let bob_token_a_owner = mock_erc721_a.ownerOf(U256::from(1)).call().await?;
 
         // both sides received the tokens
         assert_eq!(
@@ -1111,11 +1112,11 @@ mod tests {
         // begin test
         let bid = Erc721Data {
             address: test.mock_addresses.erc721_a,
-            id: 1.try_into()?,
+            id: U256::from(1),
         };
         let ask = Erc721Data {
             address: test.mock_addresses.erc721_b,
-            id: 2.try_into()?,
+            id: U256::from(2),
         };
 
         // alice approves token for escrow
@@ -1145,7 +1146,7 @@ mod tests {
             .await?;
 
         // verify token returned to alice
-        let owner = mock_erc721_a.ownerOf(1.try_into()?).call().await?;
+        let owner = mock_erc721_a.ownerOf(U256::from(1)).call().await?;
 
         assert_eq!(
             owner,
@@ -1173,11 +1174,11 @@ mod tests {
         // Create exchange information
         let bid = Erc721Data {
             address: test.mock_addresses.erc721_a,
-            id: 1.try_into()?,
+            id: U256::from(1),
         };
         let ask = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 100.try_into()?,
+            value: U256::from(100),
         };
 
         // alice approves token for escrow
@@ -1194,7 +1195,7 @@ mod tests {
             .await?;
 
         // Verify escrow happened
-        let owner = mock_erc721_a.ownerOf(1.try_into()?).call().await?;
+        let owner = mock_erc721_a.ownerOf(U256::from(1)).call().await?;
 
         assert_eq!(
             owner, test.addresses.erc721_addresses.escrow_obligation,
@@ -1225,12 +1226,12 @@ mod tests {
         // Create exchange information
         let bid = Erc721Data {
             address: test.mock_addresses.erc721_a,
-            id: 1.try_into()?,
+            id: U256::from(1),
         };
         let ask = Erc1155Data {
             address: test.mock_addresses.erc1155_a,
-            id: 1.try_into()?,
-            value: 10.try_into()?,
+            id: U256::from(1),
+            value: U256::from(10),
         };
 
         // alice approves token for escrow
@@ -1247,7 +1248,7 @@ mod tests {
             .await?;
 
         // Verify escrow happened
-        let owner = mock_erc721_a.ownerOf(1.try_into()?).call().await?;
+        let owner = mock_erc721_a.ownerOf(U256::from(1)).call().await?;
 
         assert_eq!(
             owner, test.addresses.erc721_addresses.escrow_obligation,
@@ -1278,23 +1279,23 @@ mod tests {
         // Create exchange information
         let bid = Erc721Data {
             address: test.mock_addresses.erc721_a,
-            id: 1.try_into()?,
+            id: U256::from(1),
         };
 
         // Create bundle data
         let bundle = TokenBundleData {
             erc20s: vec![Erc20Data {
                 address: test.mock_addresses.erc20_b,
-                value: 20.try_into()?,
+                value: U256::from(20),
             }],
             erc721s: vec![Erc721Data {
                 address: test.mock_addresses.erc721_b,
-                id: 2.try_into()?,
+                id: U256::from(2),
             }],
             erc1155s: vec![Erc1155Data {
                 address: test.mock_addresses.erc1155_a,
-                id: 1.try_into()?,
-                value: 5.try_into()?,
+                id: U256::from(1),
+                value: U256::from(5),
             }],
         };
 
@@ -1312,7 +1313,7 @@ mod tests {
             .await?;
 
         // Verify escrow happened
-        let owner = mock_erc721_a.ownerOf(1.try_into()?).call().await?;
+        let owner = mock_erc721_a.ownerOf(U256::from(1)).call().await?;
 
         assert_eq!(
             owner, test.addresses.erc721_addresses.escrow_obligation,
@@ -1343,7 +1344,7 @@ mod tests {
         // give bob some ERC20 tokens for escrow
         let mock_erc20_a = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
         mock_erc20_a
-            .transfer(test.bob.address(), 100.try_into()?)
+            .transfer(test.bob.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -1353,12 +1354,12 @@ mod tests {
         let bid = Erc20Data {
             // bob's bid
             address: test.mock_addresses.erc20_a,
-            value: 100.try_into()?,
+            value: U256::from(100),
         };
         let ask = Erc721Data {
             // bob asks for alice's ERC721
             address: test.mock_addresses.erc721_a,
-            id: 1.try_into()?,
+            id: U256::from(1),
         };
 
         // bob approves tokens for escrow and creates buy attestation
@@ -1391,12 +1392,12 @@ mod tests {
         // verify token transfers
         let alice_token_a_balance = mock_erc20_a.balanceOf(test.alice.address()).call().await?;
 
-        let bob_token_owner = mock_erc721_a.ownerOf(1.try_into()?).call().await?;
+        let bob_token_owner = mock_erc721_a.ownerOf(U256::from(1)).call().await?;
 
         // both sides received the tokens
         assert_eq!(
             alice_token_a_balance,
-            100.try_into()?,
+            U256::from(100),
             "Alice should have received ERC20 tokens"
         );
         assert_eq!(
@@ -1425,7 +1426,7 @@ mod tests {
         // give bob some ERC1155 tokens for escrow
         let mock_erc1155_a = MockERC1155::new(test.mock_addresses.erc1155_a, &test.god_provider);
         mock_erc1155_a
-            .mint(test.bob.address(), 1.try_into()?, 10.try_into()?)
+            .mint(test.bob.address(), U256::from(1), U256::from(10))
             .send()
             .await?
             .get_receipt()
@@ -1435,13 +1436,13 @@ mod tests {
         let bid = Erc1155Data {
             // bob's bid
             address: test.mock_addresses.erc1155_a,
-            id: 1.try_into()?,
-            value: 10.try_into()?,
+            id: U256::from(1),
+            value: U256::from(10),
         };
         let ask = Erc721Data {
             // bob asks for alice's ERC721
             address: test.mock_addresses.erc721_a,
-            id: 1.try_into()?,
+            id: U256::from(1),
         };
 
         // bob approves tokens for escrow and creates buy attestation
@@ -1473,16 +1474,16 @@ mod tests {
 
         // verify token transfers
         let alice_erc1155_balance = mock_erc1155_a
-            .balanceOf(test.alice.address(), 1.try_into()?)
+            .balanceOf(test.alice.address(), U256::from(1))
             .call()
             .await?;
 
-        let bob_token_owner = mock_erc721_a.ownerOf(1.try_into()?).call().await?;
+        let bob_token_owner = mock_erc721_a.ownerOf(U256::from(1)).call().await?;
 
         // both sides received the tokens
         assert_eq!(
             alice_erc1155_balance,
-            10.try_into()?,
+            U256::from(10),
             "Alice should have received ERC1155 tokens"
         );
         assert_eq!(
@@ -1512,7 +1513,7 @@ mod tests {
         // ERC20
         let mock_erc20_b = MockERC20Permit::new(test.mock_addresses.erc20_b, &test.god_provider);
         mock_erc20_b
-            .transfer(test.bob.address(), 20.try_into()?)
+            .transfer(test.bob.address(), U256::from(20))
             .send()
             .await?
             .get_receipt()
@@ -1530,7 +1531,7 @@ mod tests {
         // ERC1155
         let mock_erc1155_a = MockERC1155::new(test.mock_addresses.erc1155_a, &test.god_provider);
         mock_erc1155_a
-            .mint(test.bob.address(), 1.try_into()?, 5.try_into()?)
+            .mint(test.bob.address(), U256::from(1), U256::from(5))
             .send()
             .await?
             .get_receipt()
@@ -1541,7 +1542,7 @@ mod tests {
         let initial_alice_erc20_balance =
             mock_erc20_b.balanceOf(test.alice.address()).call().await?;
         let initial_alice_erc1155_balance = mock_erc1155_a
-            .balanceOf(test.alice.address(), 1.try_into()?)
+            .balanceOf(test.alice.address(), U256::from(1))
             .call()
             .await?;
 
@@ -1549,23 +1550,23 @@ mod tests {
         let bundle = TokenBundleData {
             erc20s: vec![Erc20Data {
                 address: test.mock_addresses.erc20_b,
-                value: 20.try_into()?,
+                value: U256::from(20),
             }],
             erc721s: vec![Erc721Data {
                 address: test.mock_addresses.erc721_b,
-                id: 1.try_into()?,
+                id: U256::from(1),
             }],
             erc1155s: vec![Erc1155Data {
                 address: test.mock_addresses.erc1155_a,
-                id: 1.try_into()?,
-                value: 5.try_into()?,
+                id: U256::from(1),
+                value: U256::from(5),
             }],
         };
 
         // Create the ERC721 payment obligation data as the demand
         let payment_obligation_data = crate::contracts::ERC721PaymentObligation::ObligationData {
             token: test.mock_addresses.erc721_a,
-            tokenId: 1.try_into()?,
+            tokenId: U256::from(1),
             payee: test.bob.address(),
         };
 
@@ -1597,7 +1598,7 @@ mod tests {
             .approve(
                 &Erc721Data {
                     address: test.mock_addresses.erc721_a,
-                    id: 1.try_into()?,
+                    id: U256::from(1),
                 },
                 ApprovalPurpose::Payment,
             )
@@ -1618,20 +1619,20 @@ mod tests {
         // Check alice received all tokens from the bundle
         let final_alice_erc20_balance = mock_erc20_b.balanceOf(test.alice.address()).call().await?;
 
-        let alice_erc721_owner = mock_erc721_b.ownerOf(1.try_into()?).call().await?;
+        let alice_erc721_owner = mock_erc721_b.ownerOf(U256::from(1)).call().await?;
 
         let final_alice_erc1155_balance = mock_erc1155_a
-            .balanceOf(test.alice.address(), 1.try_into()?)
+            .balanceOf(test.alice.address(), U256::from(1))
             .call()
             .await?;
 
         // Check bob received the ERC721 token
-        let bob_token_owner = mock_erc721_a.ownerOf(1.try_into()?).call().await?;
+        let bob_token_owner = mock_erc721_a.ownerOf(U256::from(1)).call().await?;
 
         // Verify alice received the bundle
         assert_eq!(
             final_alice_erc20_balance - initial_alice_erc20_balance,
-            20.try_into()?,
+            U256::from(20),
             "Alice should have received ERC20 tokens"
         );
         assert_eq!(
@@ -1641,7 +1642,7 @@ mod tests {
         );
         assert_eq!(
             final_alice_erc1155_balance - initial_alice_erc1155_balance,
-            5.try_into()?,
+            U256::from(5),
             "Alice should have received ERC1155 tokens"
         );
 

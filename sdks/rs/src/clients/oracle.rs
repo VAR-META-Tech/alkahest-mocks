@@ -21,7 +21,7 @@ use crate::{
         TrustedOracleArbiter,
     },
     extensions::AlkahestExtension,
-    types::{PublicProvider, WalletProvider},
+    types::{ProviderContext, SharedPublicProvider, SharedWalletProvider},
 };
 
 #[derive(Debug, Clone)]
@@ -32,8 +32,8 @@ pub struct OracleAddresses {
 
 #[derive(Clone)]
 pub struct OracleModule {
-    public_provider: PublicProvider,
-    wallet_provider: WalletProvider,
+    public_provider: SharedPublicProvider,
+    wallet_provider: SharedWalletProvider,
     signer_address: Address,
 
     pub addresses: OracleAddresses,
@@ -121,14 +121,14 @@ impl AlkahestExtension for OracleModule {
     type Config = OracleAddresses;
 
     async fn init(
-        _signer: alloy::signers::local::PrivateKeySigner,
+        signer: alloy::signers::local::PrivateKeySigner,
         providers: crate::types::ProviderContext,
         config: Option<Self::Config>,
     ) -> eyre::Result<Self> {
         Self::new(
-            (*providers.public).clone(),
-            (*providers.wallet).clone(),
-            providers.signer.address(),
+            providers.public.clone(),
+            providers.wallet.clone(),
+            signer.address(),
             config,
         )
     }
@@ -147,8 +147,8 @@ pub struct ListenAndArbitrateResult {
 
 impl OracleModule {
     pub fn new(
-        public_provider: PublicProvider,
-        wallet_provider: WalletProvider,
+        public_provider: SharedPublicProvider,
+        wallet_provider: SharedWalletProvider,
         signer_address: Address,
         addresses: Option<OracleAddresses>,
     ) -> eyre::Result<Self> {
@@ -212,7 +212,7 @@ impl OracleModule {
         &self,
         fulfillment: &Attestation,
     ) -> eyre::Result<Attestation> {
-        let eas = IEAS::new(self.addresses.eas, &self.wallet_provider);
+        let eas = IEAS::new(self.addresses.eas, &*self.wallet_provider);
         let escrow = eas.getAttestation(fulfillment.refUID).call().await?;
         Ok(escrow)
     }
@@ -252,17 +252,13 @@ impl OracleModule {
         obligation_uid: FixedBytes<32>,
         oracle: Address,
     ) -> eyre::Result<TransactionReceipt> {
-        let trusted_oracle_arbiter =
-            TrustedOracleArbiter::new(self.addresses.trusted_oracle_arbiter, &self.wallet_provider);
-
-        let nonce = self
-            .wallet_provider
-            .get_transaction_count(self.signer_address)
-            .await?;
+        let trusted_oracle_arbiter = TrustedOracleArbiter::new(
+            self.addresses.trusted_oracle_arbiter,
+            &*self.wallet_provider,
+        );
 
         let tx = trusted_oracle_arbiter
             .requestArbitration(obligation_uid, oracle)
-            .nonce(nonce)
             .send()
             .await?;
 
@@ -328,7 +324,7 @@ impl OracleModule {
             .collect::<Result<Vec<_>, _>>()?;
 
         let attestation_futures = logs.into_iter().map(|log| {
-            let eas = IEAS::new(self.addresses.eas, &self.wallet_provider);
+            let eas = IEAS::new(self.addresses.eas, &*self.wallet_provider);
             async move { eas.getAttestation(log.inner.obligation).call().await }
         });
 
@@ -370,7 +366,7 @@ impl OracleModule {
             .filter_map(|(i, (attestation, decision))| {
                 let trusted_oracle_arbiter = TrustedOracleArbiter::new(
                     self.addresses.trusted_oracle_arbiter,
-                    &self.wallet_provider,
+                    &*self.wallet_provider,
                 );
                 if let Some(decision) = decision {
                     Some(async move {
@@ -385,7 +381,11 @@ impl OracleModule {
             })
             .collect::<Vec<_>>();
 
-        let pending_txs = try_join_all(arbitration_futs).await?;
+        let mut pending_txs = Vec::new();
+        for fut in arbitration_futs {
+            pending_txs.push(fut.await?);
+        }
+
         let receipt_futs = pending_txs
             .into_iter()
             .map(|tx| async move { tx.get_receipt().await });
@@ -587,9 +587,11 @@ impl OracleModule {
         options: &ArbitrateOptions,
         timeout: Option<Duration>,
     ) {
-        let eas = IEAS::new(self.addresses.eas, &self.wallet_provider);
-        let arbiter =
-            TrustedOracleArbiter::new(self.addresses.trusted_oracle_arbiter, &self.wallet_provider);
+        let eas = IEAS::new(self.addresses.eas, &*self.wallet_provider);
+        let arbiter = TrustedOracleArbiter::new(
+            self.addresses.trusted_oracle_arbiter,
+            &*self.wallet_provider,
+        );
 
         loop {
             let next_result = if let Some(timeout_duration) = timeout {
