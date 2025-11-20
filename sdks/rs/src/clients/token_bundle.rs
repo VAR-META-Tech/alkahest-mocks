@@ -1,4 +1,5 @@
 use alloy::primitives::{Address, Bytes, FixedBytes};
+use alloy::providers::Provider;
 use alloy::rpc::types::TransactionReceipt;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol_types::SolValue as _;
@@ -10,7 +11,7 @@ use crate::extensions::ContractModule;
 use crate::types::{ArbiterData, DecodedAttestation, TokenBundleData};
 use crate::{
     extensions::AlkahestExtension,
-    types::{ApprovalPurpose, ProviderContext, WalletProvider},
+    types::{ApprovalPurpose, ProviderContext, SharedWalletProvider},
 };
 use serde::{Deserialize, Serialize};
 
@@ -32,7 +33,7 @@ pub struct TokenBundleAddresses {
 #[derive(Clone)]
 pub struct TokenBundleModule {
     signer: PrivateKeySigner,
-    wallet_provider: WalletProvider,
+    wallet_provider: SharedWalletProvider,
 
     pub addresses: TokenBundleAddresses,
 }
@@ -81,7 +82,7 @@ impl TokenBundleModule {
     /// * `Result<Self>` - The initialized client instance
     pub fn new(
         signer: PrivateKeySigner,
-        wallet_provider: WalletProvider,
+        wallet_provider: SharedWalletProvider,
         addresses: Option<TokenBundleAddresses>,
     ) -> eyre::Result<Self> {
         Ok(TokenBundleModule {
@@ -132,7 +133,7 @@ impl TokenBundleModule {
     ) -> eyre::Result<
         DecodedAttestation<contracts::token_bundle::TokenBundleEscrowObligation::ObligationData>,
     > {
-        let eas_contract = contracts::IEAS::new(self.addresses.eas, &self.wallet_provider);
+        let eas_contract = contracts::IEAS::new(self.addresses.eas, &*self.wallet_provider);
 
         let attestation = eas_contract.getAttestation(uid).call().await?;
         let obligation_data =
@@ -152,7 +153,7 @@ impl TokenBundleModule {
     ) -> eyre::Result<
         DecodedAttestation<contracts::token_bundle::TokenBundlePaymentObligation::ObligationData>,
     > {
-        let eas_contract = contracts::IEAS::new(self.addresses.eas, &self.wallet_provider);
+        let eas_contract = contracts::IEAS::new(self.addresses.eas, &*self.wallet_provider);
 
         let attestation = eas_contract.getAttestation(uid).call().await?;
         let obligation_data =
@@ -181,7 +182,7 @@ impl TokenBundleModule {
     ) -> eyre::Result<TransactionReceipt> {
         let escrow_contract = contracts::token_bundle::TokenBundleEscrowObligation::new(
             self.addresses.escrow_obligation,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = escrow_contract
@@ -207,7 +208,7 @@ impl TokenBundleModule {
     ) -> eyre::Result<TransactionReceipt> {
         let escrow_contract = contracts::token_bundle::TokenBundleEscrowObligation::new(
             self.addresses.escrow_obligation,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = escrow_contract
@@ -237,7 +238,7 @@ impl TokenBundleModule {
     ) -> eyre::Result<TransactionReceipt> {
         let escrow_obligation_contract = contracts::token_bundle::TokenBundleEscrowObligation::new(
             self.addresses.escrow_obligation,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = escrow_obligation_contract
@@ -266,7 +267,7 @@ impl TokenBundleModule {
         let payment_obligation_contract =
             contracts::token_bundle::TokenBundlePaymentObligation::new(
                 self.addresses.payment_obligation,
-                &self.wallet_provider,
+                &*self.wallet_provider,
             );
 
         let receipt = payment_obligation_contract
@@ -296,7 +297,7 @@ impl TokenBundleModule {
     ) -> eyre::Result<TransactionReceipt> {
         let barter_utils_contract = contracts::TokenBundleBarterUtils::new(
             self.addresses.barter_utils,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let zero_arbiter = ArbiterData {
@@ -331,7 +332,7 @@ impl TokenBundleModule {
     ) -> eyre::Result<TransactionReceipt> {
         let barter_utils_contract = contracts::TokenBundleBarterUtils::new(
             self.addresses.barter_utils,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = barter_utils_contract
@@ -370,7 +371,7 @@ impl TokenBundleModule {
 
         // Process ERC20 tokens
         for token in &bundle.erc20s {
-            let erc20_contract = IERC20::new(token.address, &self.wallet_provider);
+            let erc20_contract = IERC20::new(token.address, &*self.wallet_provider);
 
             // Use map_err for more concise error handling
             let receipt = erc20_contract
@@ -391,7 +392,7 @@ impl TokenBundleModule {
 
         // For contracts with multiple tokens, use setApprovalForAll
         for address in erc721_addresses {
-            let erc721_contract = IERC721::new(address, &self.wallet_provider);
+            let erc721_contract = IERC721::new(address, &*self.wallet_provider);
 
             let receipt = erc721_contract
                 .setApprovalForAll(target, true)
@@ -411,7 +412,7 @@ impl TokenBundleModule {
 
         // For ERC1155, always use setApprovalForAll
         for address in erc1155_addresses {
-            let erc1155_contract = IERC1155::new(address, &self.wallet_provider);
+            let erc1155_contract = IERC1155::new(address, &*self.wallet_provider);
 
             let receipt = erc1155_contract
                 .setApprovalForAll(target, true)
@@ -437,7 +438,7 @@ impl AlkahestExtension for TokenBundleModule {
         providers: ProviderContext,
         config: Option<Self::Config>,
     ) -> eyre::Result<Self> {
-        Self::new(signer, (*providers.wallet).clone(), config)
+        Self::new(signer, providers.wallet.clone(), config)
     }
 }
 

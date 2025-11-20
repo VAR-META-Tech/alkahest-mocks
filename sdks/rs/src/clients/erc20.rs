@@ -1,5 +1,5 @@
 use alloy::dyn_abi::Eip712Domain;
-use alloy::providers::Provider as _;
+use alloy::providers::{Provider as _, WalletProvider};
 use alloy::rpc::types::TransactionReceipt;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::{Signature, Signer};
@@ -17,7 +17,7 @@ use crate::types::{
     ApprovalPurpose, ArbiterData, DecodedAttestation, Erc20Data, Erc721Data, Erc1155Data,
     TokenBundleData,
 };
-use crate::types::{ProviderContext, WalletProvider};
+use crate::types::{ProviderContext, SharedWalletProvider};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,7 +38,7 @@ pub struct Erc20Addresses {
 #[derive(Clone)]
 pub struct Erc20Module {
     signer: PrivateKeySigner,
-    wallet_provider: WalletProvider,
+    wallet_provider: SharedWalletProvider,
 
     pub addresses: Erc20Addresses,
 }
@@ -87,7 +87,7 @@ impl Erc20Module {
     /// * `Result<Self>` - The initialized client instance
     pub fn new(
         signer: PrivateKeySigner,
-        wallet_provider: WalletProvider,
+        wallet_provider: SharedWalletProvider,
         addresses: Option<Erc20Addresses>,
     ) -> eyre::Result<Self> {
         Ok(Erc20Module {
@@ -242,6 +242,7 @@ impl Erc20Module {
             ApprovalPurpose::Escrow => self.addresses.escrow_obligation,
         };
 
+        // just for test nonce synchronization
         let token_contract = ERC20Permit::new(token.address, &self.wallet_provider);
         let receipt = token_contract
             .approve(to, token.value)
@@ -389,11 +390,12 @@ impl Erc20Module {
         expiration: u64,
     ) -> eyre::Result<TransactionReceipt> {
         let deadline = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() + 3600;
+
         let permit = self
             .get_permit_signature(
                 self.addresses.escrow_obligation,
                 price,
-                deadline.try_into()?,
+                U256::from(deadline),
             )
             .await?;
 
@@ -406,7 +408,7 @@ impl Erc20Module {
                 item.arbiter,
                 item.demand.clone(),
                 expiration,
-                deadline.try_into()?,
+                U256::from(deadline),
                 27 + permit.v() as u8,
                 permit.r().into(),
                 permit.s().into(),
@@ -477,18 +479,19 @@ impl Erc20Module {
             .get_permit_signature(
                 self.addresses.payment_obligation,
                 price,
-                deadline.try_into()?,
+                U256::from(deadline),
             )
             .await?;
 
         let barter_utils_contract =
             contracts::ERC20BarterUtils::new(self.addresses.barter_utils, &self.wallet_provider);
+
         let receipt = barter_utils_contract
             .permitAndPayWithErc20(
                 price.address,
                 price.value,
                 payee,
-                deadline.try_into()?,
+                U256::from(deadline),
                 27 + permit.v() as u8,
                 permit.r().into(),
                 permit.s().into(),
@@ -518,6 +521,7 @@ impl Erc20Module {
     ) -> eyre::Result<TransactionReceipt> {
         let barter_utils_contract =
             contracts::ERC20BarterUtils::new(self.addresses.barter_utils, &self.wallet_provider);
+
         let receipt = barter_utils_contract
             .buyErc20ForErc20(bid.address, bid.value, ask.address, ask.value, expiration)
             .send()
@@ -546,7 +550,7 @@ impl Erc20Module {
         let deadline = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() + 3600;
 
         let permit = self
-            .get_permit_signature(self.addresses.escrow_obligation, bid, deadline.try_into()?)
+            .get_permit_signature(self.addresses.escrow_obligation, bid, U256::from(deadline))
             .await?;
 
         let barter_utils_contract =
@@ -559,7 +563,7 @@ impl Erc20Module {
                 ask.address,
                 ask.value,
                 expiration,
-                deadline.try_into()?,
+                U256::from(deadline),
                 27 + permit.v() as u8,
                 permit.r().into(),
                 permit.s().into(),
@@ -585,6 +589,7 @@ impl Erc20Module {
     ) -> eyre::Result<TransactionReceipt> {
         let barter_utils_contract =
             contracts::ERC20BarterUtils::new(self.addresses.barter_utils, &self.wallet_provider);
+
         let receipt = barter_utils_contract
             .payErc20ForErc20(buy_attestation)
             .send()
@@ -633,14 +638,14 @@ impl Erc20Module {
                     address: demand_data.token,
                     value: demand_data.amount,
                 },
-                deadline.try_into()?,
+                U256::from(deadline),
             )
             .await?;
 
         let receipt = barter_utils_contract
             .permitAndPayErc20ForErc20(
                 buy_attestation,
-                deadline.try_into()?,
+                U256::from(deadline),
                 27 + permit.v() as u8,
                 permit.r().into(),
                 permit.s().into(),
@@ -700,7 +705,7 @@ impl Erc20Module {
     ) -> eyre::Result<TransactionReceipt> {
         let deadline = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() + 3600;
         let permit = self
-            .get_permit_signature(self.addresses.escrow_obligation, bid, deadline.try_into()?)
+            .get_permit_signature(self.addresses.escrow_obligation, bid, U256::from(deadline))
             .await?;
 
         let barter_utils_contract = contracts::erc20_barter_cross_token::ERC20BarterCrossToken::new(
@@ -715,7 +720,7 @@ impl Erc20Module {
                 ask.address,
                 ask.id,
                 expiration,
-                deadline.try_into()?,
+                U256::from(deadline),
                 27 + permit.v() as u8,
                 permit.r().into(),
                 permit.s().into(),
@@ -787,14 +792,14 @@ impl Erc20Module {
                     address: demand_data.token,
                     value: demand_data.amount,
                 },
-                deadline.try_into()?,
+                U256::from(deadline),
             )
             .await?;
 
         let receipt = barter_utils_contract
             .permitAndPayErc20ForErc721(
                 buy_attestation,
-                deadline.try_into()?,
+                U256::from(deadline),
                 27 + permit.v() as u8,
                 permit.r().into(),
                 permit.s().into(),
@@ -861,7 +866,7 @@ impl Erc20Module {
     ) -> eyre::Result<TransactionReceipt> {
         let deadline = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() + 3600;
         let permit = self
-            .get_permit_signature(self.addresses.escrow_obligation, bid, deadline.try_into()?)
+            .get_permit_signature(self.addresses.escrow_obligation, bid, U256::from(deadline))
             .await?;
 
         let barter_utils_contract = contracts::erc20_barter_cross_token::ERC20BarterCrossToken::new(
@@ -877,7 +882,7 @@ impl Erc20Module {
                 ask.id,
                 ask.value,
                 expiration,
-                deadline.try_into()?,
+                U256::from(deadline),
                 27 + permit.v() as u8,
                 permit.r().into(),
                 permit.s().into(),
@@ -949,14 +954,14 @@ impl Erc20Module {
                     address: demand_data.token,
                     value: demand_data.amount,
                 },
-                deadline.try_into()?,
+                U256::from(deadline),
             )
             .await?;
 
         let receipt = barter_utils_contract
             .permitAndPayErc20ForErc1155(
                 buy_attestation,
-                deadline.try_into()?,
+                U256::from(deadline),
                 27 + permit.v() as u8,
                 permit.r().into(),
                 permit.s().into(),
@@ -1021,7 +1026,7 @@ impl Erc20Module {
     ) -> eyre::Result<TransactionReceipt> {
         let deadline = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() + 3600;
         let permit = self
-            .get_permit_signature(self.addresses.escrow_obligation, bid, deadline.try_into()?)
+            .get_permit_signature(self.addresses.escrow_obligation, bid, U256::from(deadline))
             .await?;
 
         let barter_utils_contract = contracts::erc20_barter_cross_token::ERC20BarterCrossToken::new(
@@ -1035,7 +1040,7 @@ impl Erc20Module {
                 bid.value,
                 (ask, self.signer.address()).into(),
                 expiration,
-                deadline.try_into()?,
+                U256::from(deadline),
                 27 + permit.v() as u8,
                 permit.r().into(),
                 permit.s().into(),
@@ -1108,14 +1113,14 @@ impl Erc20Module {
                     address: demand_data.token,
                     value: demand_data.amount,
                 },
-                deadline.try_into()?,
+                U256::from(deadline),
             )
             .await?;
 
         let receipt = barter_utils_contract
             .permitAndPayErc20ForBundle(
                 buy_attestation,
-                deadline.try_into()?,
+                U256::from(deadline),
                 27 + permit.v() as u8,
                 permit.r().into(),
                 permit.s().into(),
@@ -1137,7 +1142,7 @@ impl AlkahestExtension for Erc20Module {
         providers: ProviderContext,
         config: Option<Self::Config>,
     ) -> eyre::Result<Self> {
-        Self::new(signer, (*providers.wallet).clone(), config)
+        Self::new(signer, providers.wallet.clone(), config)
     }
 }
 
@@ -1170,7 +1175,7 @@ mod tests {
 
         // Create sample obligation data
         let token_address = test.mock_addresses.erc20_a;
-        let amount: U256 = 100.try_into()?;
+        let amount: U256 = U256::from(100);
         let arbiter = test.addresses.erc20_addresses.payment_obligation;
         let demand = Bytes::from(vec![1, 2, 3, 4]); // sample demand data
 
@@ -1203,7 +1208,7 @@ mod tests {
 
         // Create sample obligation data
         let token_address = test.mock_addresses.erc20_a;
-        let amount: U256 = 100.try_into()?;
+        let amount: U256 = U256::from(100);
         let payee = test.alice.address();
 
         let payment_data = ERC20PaymentObligation::ObligationData {
@@ -1234,7 +1239,7 @@ mod tests {
         // give alice some erc20 tokens
         let mock_erc20_a = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
         mock_erc20_a
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -1242,7 +1247,7 @@ mod tests {
 
         let token = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 100.try_into()?,
+            value: U256::from(100),
         };
 
         // Test approve for payment
@@ -1264,7 +1269,7 @@ mod tests {
 
         assert_eq!(
             payment_allowance,
-            100.try_into()?,
+            U256::from(100),
             "Payment allowance should be set correctly"
         );
 
@@ -1286,7 +1291,7 @@ mod tests {
 
         assert_eq!(
             escrow_allowance,
-            100.try_into()?,
+            U256::from(100),
             "Escrow allowance should be set correctly"
         );
 
@@ -1301,7 +1306,7 @@ mod tests {
         // give alice some erc20 tokens
         let mock_erc20_a = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
         mock_erc20_a
-            .transfer(test.alice.address(), 200.try_into()?)
+            .transfer(test.alice.address(), U256::from(200))
             .send()
             .await?
             .get_receipt()
@@ -1309,7 +1314,7 @@ mod tests {
 
         let token = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 100.try_into()?,
+            value: U256::from(100),
         };
 
         // First time should approve (no existing allowance)
@@ -1335,7 +1340,7 @@ mod tests {
 
         assert_eq!(
             payment_allowance,
-            100.try_into()?,
+            U256::from(100),
             "Payment allowance should be set correctly"
         );
 
@@ -1351,7 +1356,7 @@ mod tests {
         // Now test with a larger amount
         let larger_token = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 150.try_into()?,
+            value: U256::from(150),
         };
 
         // This should approve again because we need a higher allowance
@@ -1377,7 +1382,7 @@ mod tests {
 
         assert_eq!(
             new_payment_allowance,
-            150.try_into()?,
+            U256::from(150),
             "New payment allowance should be set correctly"
         );
 
@@ -1392,7 +1397,7 @@ mod tests {
         // give alice some erc20 tokens
         let mock_erc20_a = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
         mock_erc20_a
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -1400,7 +1405,7 @@ mod tests {
 
         let price = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 100.try_into()?,
+            value: U256::from(100),
         };
 
         // Create custom arbiter data
@@ -1430,8 +1435,8 @@ mod tests {
             .await?;
 
         // all tokens in escrow
-        assert_eq!(alice_balance, 0.try_into()?);
-        assert_eq!(escrow_balance, 100.try_into()?);
+        assert_eq!(alice_balance, U256::from(0));
+        assert_eq!(escrow_balance, U256::from(100));
 
         // escrow obligation made
         let attested_event = DefaultAlkahestClient::get_attested_event(receipt)?;
@@ -1448,7 +1453,7 @@ mod tests {
         // give alice some erc20 tokens
         let mock_erc20_a = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
         mock_erc20_a
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -1456,7 +1461,7 @@ mod tests {
 
         let price = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 100.try_into()?,
+            value: U256::from(100),
         };
 
         // Create custom arbiter data
@@ -1482,8 +1487,8 @@ mod tests {
             .await?;
 
         // all tokens in escrow
-        assert_eq!(alice_balance, 0.try_into()?);
-        assert_eq!(escrow_balance, 100.try_into()?);
+        assert_eq!(alice_balance, U256::from(0));
+        assert_eq!(escrow_balance, U256::from(100));
 
         // escrow obligation made
         let attested_event = DefaultAlkahestClient::get_attested_event(receipt)?;
@@ -1500,7 +1505,7 @@ mod tests {
         // give alice some erc20 tokens
         let mock_erc20_a = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
         mock_erc20_a
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -1508,7 +1513,7 @@ mod tests {
 
         let price = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 100.try_into()?,
+            value: U256::from(100),
         };
 
         // approve tokens for payment
@@ -1530,8 +1535,8 @@ mod tests {
         let bob_balance = mock_erc20_a.balanceOf(test.bob.address()).call().await?;
 
         // all tokens paid to bob
-        assert_eq!(alice_balance, 0.try_into()?);
-        assert_eq!(bob_balance, 100.try_into()?);
+        assert_eq!(alice_balance, U256::from(0));
+        assert_eq!(bob_balance, U256::from(100));
 
         // payment obligation made
         let attested_event = DefaultAlkahestClient::get_attested_event(receipt)?;
@@ -1548,7 +1553,7 @@ mod tests {
         // give alice some erc20 tokens
         let mock_erc20_a = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
         mock_erc20_a
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -1556,7 +1561,7 @@ mod tests {
 
         let price = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 100.try_into()?,
+            value: U256::from(100),
         };
 
         // alice makes direct payment to bob using permit (no pre-approval needed)
@@ -1572,8 +1577,8 @@ mod tests {
         let bob_balance = mock_erc20_a.balanceOf(test.bob.address()).call().await?;
 
         // all tokens paid to bob
-        assert_eq!(alice_balance, 0.try_into()?);
-        assert_eq!(bob_balance, 100.try_into()?);
+        assert_eq!(alice_balance, U256::from(0));
+        assert_eq!(bob_balance, U256::from(100));
 
         // payment obligation made
         let attested_event = DefaultAlkahestClient::get_attested_event(receipt)?;
@@ -1591,7 +1596,7 @@ mod tests {
         // give alice some erc20 tokens
         let mock_erc20_a = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
         mock_erc20_a
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -1600,11 +1605,11 @@ mod tests {
         // begin test
         let bid = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 100.try_into()?,
+            value: U256::from(100),
         };
         let ask = Erc20Data {
             address: test.mock_addresses.erc20_b,
-            value: 200.try_into()?,
+            value: U256::from(200),
         };
 
         // alice approves tokens for escrow
@@ -1627,8 +1632,8 @@ mod tests {
             .await?;
 
         // all tokens in escrow
-        assert_eq!(alice_balance, 0.try_into()?);
-        assert_eq!(escrow_balance, 100.try_into()?);
+        assert_eq!(alice_balance, U256::from(0));
+        assert_eq!(escrow_balance, U256::from(100));
 
         // escrow obligation made
         let attested_event = DefaultAlkahestClient::get_attested_event(receipt)?;
@@ -1645,7 +1650,7 @@ mod tests {
         // give alice some erc20 tokens
         let mock_erc20_a = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
         mock_erc20_a
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -1654,11 +1659,11 @@ mod tests {
         // begin test
         let bid = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 100.try_into()?,
+            value: U256::from(100),
         };
         let ask = Erc20Data {
             address: test.mock_addresses.erc20_b,
-            value: 200.try_into()?,
+            value: U256::from(200),
         };
 
         // alice creates an escrow using permit signature (no pre-approval needed)
@@ -1675,8 +1680,8 @@ mod tests {
             .await?;
 
         // all tokens in escrow
-        assert_eq!(alice_balance, 0.try_into()?);
-        assert_eq!(escrow_balance, 100.try_into()?);
+        assert_eq!(alice_balance, U256::from(0));
+        assert_eq!(escrow_balance, U256::from(100));
 
         // escrow obligation made
         let attested_event = DefaultAlkahestClient::get_attested_event(receipt)?;
@@ -1693,7 +1698,7 @@ mod tests {
         // give alice some erc20 tokens for bidding
         let mock_erc20_a = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
         mock_erc20_a
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -1702,7 +1707,7 @@ mod tests {
         // give bob some erc20 tokens for fulfillment
         let mock_erc20_b = MockERC20Permit::new(test.mock_addresses.erc20_b, &test.god_provider);
         mock_erc20_b
-            .transfer(test.bob.address(), 200.try_into()?)
+            .transfer(test.bob.address(), U256::from(200))
             .send()
             .await?
             .get_receipt()
@@ -1711,11 +1716,11 @@ mod tests {
         // begin test
         let bid = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 100.try_into()?,
+            value: U256::from(100),
         };
         let ask = Erc20Data {
             address: test.mock_addresses.erc20_b,
-            value: 200.try_into()?,
+            value: U256::from(200),
         };
 
         // alice approves tokens for escrow and creates buy attestation
@@ -1753,12 +1758,12 @@ mod tests {
         // both sides received the tokens
         assert_eq!(
             alice_token_b_balance,
-            200.try_into()?,
+            U256::from(200),
             "Alice should have received token B"
         );
         assert_eq!(
             bob_token_a_balance,
-            100.try_into()?,
+            U256::from(100),
             "Bob should have received token A"
         );
 
@@ -1773,7 +1778,7 @@ mod tests {
         // give alice some erc20 tokens for bidding
         let mock_erc20_a = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
         mock_erc20_a
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -1782,7 +1787,7 @@ mod tests {
         // give bob some erc20 tokens for fulfillment
         let mock_erc20_b = MockERC20Permit::new(test.mock_addresses.erc20_b, &test.god_provider);
         mock_erc20_b
-            .transfer(test.bob.address(), 200.try_into()?)
+            .transfer(test.bob.address(), U256::from(200))
             .send()
             .await?
             .get_receipt()
@@ -1791,11 +1796,11 @@ mod tests {
         // begin test
         let bid = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 100.try_into()?,
+            value: U256::from(100),
         };
         let ask = Erc20Data {
             address: test.mock_addresses.erc20_b,
-            value: 200.try_into()?,
+            value: U256::from(200),
         };
 
         // alice approves tokens for escrow and creates buy attestation
@@ -1827,12 +1832,12 @@ mod tests {
         // both sides received the tokens
         assert_eq!(
             alice_token_b_balance,
-            200.try_into()?,
+            U256::from(200),
             "Alice should have received token B"
         );
         assert_eq!(
             bob_token_a_balance,
-            100.try_into()?,
+            U256::from(100),
             "Bob should have received token A"
         );
 
@@ -1847,7 +1852,7 @@ mod tests {
         // give alice some erc20 tokens
         let mock_erc20_a = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
         mock_erc20_a
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -1856,11 +1861,11 @@ mod tests {
         // begin test
         let bid = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 100.try_into()?,
+            value: U256::from(100),
         };
         let ask = Erc20Data {
             address: test.mock_addresses.erc20_b,
-            value: 200.try_into()?,
+            value: U256::from(200),
         };
 
         // alice approves tokens for escrow
@@ -1895,7 +1900,7 @@ mod tests {
 
         assert_eq!(
             alice_balance,
-            100.try_into()?,
+            U256::from(100),
             "Tokens should be returned to Alice"
         );
 
@@ -1910,7 +1915,7 @@ mod tests {
         // Set up tokens - alice gets ERC20, bob gets ERC721
         let mock_erc20 = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
         mock_erc20
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -1919,12 +1924,12 @@ mod tests {
         // Create a purchase offer
         let bid = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 50.try_into()?,
+            value: U256::from(50),
         };
 
         let ask = Erc721Data {
             address: test.mock_addresses.erc721_a,
-            id: 1.try_into()?,
+            id: U256::from(1),
         };
 
         // alice approves tokens for escrow
@@ -1949,8 +1954,8 @@ mod tests {
             .await?;
 
         // tokens in escrow
-        assert_eq!(alice_balance, 50.try_into()?);
-        assert_eq!(escrow_balance, 50.try_into()?);
+        assert_eq!(alice_balance, U256::from(50));
+        assert_eq!(escrow_balance, U256::from(50));
 
         // escrow obligation made
         let attested_event = DefaultAlkahestClient::get_attested_event(receipt)?;
@@ -1967,7 +1972,7 @@ mod tests {
         // Set up tokens - alice gets ERC20
         let mock_erc20 = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
         mock_erc20
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -1976,13 +1981,13 @@ mod tests {
         // Create a purchase offer
         let bid = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 50.try_into()?,
+            value: U256::from(50),
         };
 
         let ask = Erc1155Data {
             address: test.mock_addresses.erc1155_a,
-            id: 1.try_into()?,
-            value: 10.try_into()?,
+            id: U256::from(1),
+            value: U256::from(10),
         };
 
         // alice approves tokens for escrow
@@ -2007,8 +2012,8 @@ mod tests {
             .await?;
 
         // tokens in escrow
-        assert_eq!(alice_balance, 50.try_into()?);
-        assert_eq!(escrow_balance, 50.try_into()?);
+        assert_eq!(alice_balance, U256::from(50));
+        assert_eq!(escrow_balance, U256::from(50));
 
         // escrow obligation made
         let attested_event = DefaultAlkahestClient::get_attested_event(receipt)?;
@@ -2025,7 +2030,7 @@ mod tests {
         // Set up tokens - alice gets ERC20
         let mock_erc20 = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
         mock_erc20
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -2034,23 +2039,23 @@ mod tests {
         // Create a purchase offer
         let bid = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 50.try_into()?,
+            value: U256::from(50),
         };
 
         // Create bundle data
         let bundle = TokenBundleData {
             erc20s: vec![Erc20Data {
                 address: test.mock_addresses.erc20_b,
-                value: 20.try_into()?,
+                value: U256::from(20),
             }],
             erc721s: vec![Erc721Data {
                 address: test.mock_addresses.erc721_a,
-                id: 1.try_into()?,
+                id: U256::from(1),
             }],
             erc1155s: vec![Erc1155Data {
                 address: test.mock_addresses.erc1155_a,
-                id: 1.try_into()?,
-                value: 5.try_into()?,
+                id: U256::from(1),
+                value: U256::from(5),
             }],
         };
         // alice approves tokens for escrow
@@ -2075,8 +2080,8 @@ mod tests {
             .await?;
 
         // tokens in escrow
-        assert_eq!(alice_balance, 50.try_into()?);
-        assert_eq!(escrow_balance, 50.try_into()?);
+        assert_eq!(alice_balance, U256::from(50));
+        assert_eq!(escrow_balance, U256::from(50));
 
         // escrow obligation made
         let attested_event = DefaultAlkahestClient::get_attested_event(receipt)?;
@@ -2093,7 +2098,7 @@ mod tests {
         // Set up tokens - alice gets ERC20, bob gets ERC721
         let mock_erc20 = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
         mock_erc20
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -2102,12 +2107,12 @@ mod tests {
         // Create a purchase offer
         let bid = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 50.try_into()?,
+            value: U256::from(50),
         };
 
         let ask = Erc721Data {
             address: test.mock_addresses.erc721_a,
-            id: 1.try_into()?,
+            id: U256::from(1),
         };
 
         // alice creates purchase offer with permit (no pre-approval needed)
@@ -2126,8 +2131,8 @@ mod tests {
             .await?;
 
         // tokens in escrow
-        assert_eq!(alice_balance, 50.try_into()?);
-        assert_eq!(escrow_balance, 50.try_into()?);
+        assert_eq!(alice_balance, U256::from(50));
+        assert_eq!(escrow_balance, U256::from(50));
 
         // escrow obligation made
         let attested_event = DefaultAlkahestClient::get_attested_event(receipt)?;
@@ -2144,7 +2149,7 @@ mod tests {
         // Set up tokens - alice gets ERC20
         let mock_erc20 = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
         mock_erc20
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -2153,13 +2158,13 @@ mod tests {
         // Create a purchase offer
         let bid = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 50.try_into()?,
+            value: U256::from(50),
         };
 
         let ask = Erc1155Data {
             address: test.mock_addresses.erc1155_a,
-            id: 1.try_into()?,
-            value: 10.try_into()?,
+            id: U256::from(1),
+            value: U256::from(10),
         };
 
         // alice creates purchase offer with permit (no pre-approval needed)
@@ -2178,8 +2183,8 @@ mod tests {
             .await?;
 
         // tokens in escrow
-        assert_eq!(alice_balance, 50.try_into()?);
-        assert_eq!(escrow_balance, 50.try_into()?);
+        assert_eq!(alice_balance, U256::from(50));
+        assert_eq!(escrow_balance, U256::from(50));
 
         // escrow obligation made
         let attested_event = DefaultAlkahestClient::get_attested_event(receipt)?;
@@ -2196,7 +2201,7 @@ mod tests {
         // Set up tokens - alice gets ERC20
         let mock_erc20 = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
         mock_erc20
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -2205,23 +2210,23 @@ mod tests {
         // Create a purchase offer
         let bid = Erc20Data {
             address: test.mock_addresses.erc20_a,
-            value: 50.try_into()?,
+            value: U256::from(50),
         };
 
         // Create bundle data
         let bundle = TokenBundleData {
             erc20s: vec![Erc20Data {
                 address: test.mock_addresses.erc20_b,
-                value: 20.try_into()?,
+                value: U256::from(20),
             }],
             erc721s: vec![Erc721Data {
                 address: test.mock_addresses.erc721_a,
-                id: 1.try_into()?,
+                id: U256::from(1),
             }],
             erc1155s: vec![Erc1155Data {
                 address: test.mock_addresses.erc1155_a,
-                id: 1.try_into()?,
-                value: 5.try_into()?,
+                id: U256::from(1),
+                value: U256::from(5),
             }],
         };
 
@@ -2241,8 +2246,8 @@ mod tests {
             .await?;
 
         // tokens in escrow
-        assert_eq!(alice_balance, 50.try_into()?);
-        assert_eq!(escrow_balance, 50.try_into()?);
+        assert_eq!(alice_balance, U256::from(50));
+        assert_eq!(escrow_balance, U256::from(50));
 
         // escrow obligation made
         let attested_event = DefaultAlkahestClient::get_attested_event(receipt)?;
@@ -2262,7 +2267,7 @@ mod tests {
 
         // Give Alice ERC20 tokens
         mock_erc20_a
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -2277,8 +2282,8 @@ mod tests {
             .await?;
 
         // Create test data
-        let erc20_amount: U256 = 50.try_into()?;
-        let erc721_token_id: U256 = 1.try_into()?;
+        let erc20_amount: U256 = U256::from(50);
+        let erc721_token_id: U256 = U256::from(1);
         let expiration = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() + 3600; // 1 hour
 
         // First create a buy attestation with Bob escrowing ERC721
@@ -2384,7 +2389,7 @@ mod tests {
 
         // Give Alice ERC20 tokens
         mock_erc20_a
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -2399,8 +2404,8 @@ mod tests {
             .await?;
 
         // Create test data
-        let erc20_amount: U256 = 50.try_into()?;
-        let erc721_token_id: U256 = 1.try_into()?;
+        let erc20_amount: U256 = U256::from(50);
+        let erc721_token_id: U256 = U256::from(1);
         let expiration = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() + 3600; // 1 hour
 
         // First create a buy attestation with Bob escrowing ERC721
@@ -2495,15 +2500,15 @@ mod tests {
 
         // Give Alice ERC20 tokens
         mock_erc20_a
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
             .await?;
 
         // Mint ERC1155 tokens to Bob
-        let token_id = 1.try_into()?;
-        let token_amount = 50.try_into()?;
+        let token_id = U256::from(1);
+        let token_amount = U256::from(50);
         mock_erc1155_a
             .mint(test.bob.address(), token_id, token_amount)
             .send()
@@ -2512,7 +2517,7 @@ mod tests {
             .await?;
 
         // Create test data
-        let erc20_amount: U256 = 50.try_into()?;
+        let erc20_amount: U256 = U256::from(50);
         let expiration = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() + 3600; // 1 hour
 
         // First create a buy attestation with Bob escrowing ERC1155
@@ -2549,7 +2554,7 @@ mod tests {
             .await?;
         assert_eq!(
             initial_alice_erc1155_balance,
-            0.try_into()?,
+            U256::from(0),
             "Alice should start with 0 ERC1155 tokens"
         );
 
@@ -2619,15 +2624,15 @@ mod tests {
 
         // Give Alice ERC20 tokens
         mock_erc20_a
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
             .await?;
 
         // Mint ERC1155 tokens to Bob
-        let token_id = 1.try_into()?;
-        let token_amount = 50.try_into()?;
+        let token_id = U256::from(1);
+        let token_amount = U256::from(50);
         mock_erc1155_a
             .mint(test.bob.address(), token_id, token_amount)
             .send()
@@ -2636,7 +2641,7 @@ mod tests {
             .await?;
 
         // Create test data
-        let erc20_amount: U256 = 50.try_into()?;
+        let erc20_amount: U256 = U256::from(50);
         let expiration = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() + 3600; // 1 hour
 
         // First create a buy attestation with Bob escrowing ERC1155
@@ -2673,7 +2678,7 @@ mod tests {
             .await?;
         assert_eq!(
             initial_alice_erc1155_balance,
-            0.try_into()?,
+            U256::from(0),
             "Alice should start with 0 ERC1155 tokens"
         );
 
@@ -2733,7 +2738,7 @@ mod tests {
 
         // Give Alice ERC20 tokens
         mock_erc20_a
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -2741,7 +2746,7 @@ mod tests {
 
         // Give Bob bundle tokens
         mock_erc20_b
-            .transfer(test.bob.address(), 50.try_into()?)
+            .transfer(test.bob.address(), U256::from(50))
             .send()
             .await?
             .get_receipt()
@@ -2754,8 +2759,8 @@ mod tests {
             .get_receipt()
             .await?;
 
-        let erc1155_token_id = 1.try_into()?;
-        let erc1155_amount = 20.try_into()?;
+        let erc1155_token_id = U256::from(1);
+        let erc1155_amount = U256::from(20);
         mock_erc1155_a
             .mint(test.bob.address(), erc1155_token_id, erc1155_amount)
             .send()
@@ -2764,10 +2769,10 @@ mod tests {
             .await?;
 
         // Create test data
-        let erc20_amount: U256 = 50.try_into()?;
-        let bob_erc20_amount: U256 = 25.try_into()?; // Half of Bob's tokens
-        let erc721_token_id: U256 = 1.try_into()?;
-        let erc1155_bundle_amount = 10.try_into()?; // Half of Bob's tokens
+        let erc20_amount: U256 = U256::from(50);
+        let bob_erc20_amount: U256 = U256::from(25); // Half of Bob's tokens
+        let erc721_token_id: U256 = U256::from(1);
+        let erc1155_bundle_amount = U256::from(10); // Half of Bob's tokens
         let expiration = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() + 3600; // 1 hour
 
         // Create token bundle
@@ -2910,7 +2915,7 @@ mod tests {
 
         // Give Alice ERC20 tokens
         mock_erc20_a
-            .transfer(test.alice.address(), 100.try_into()?)
+            .transfer(test.alice.address(), U256::from(100))
             .send()
             .await?
             .get_receipt()
@@ -2918,7 +2923,7 @@ mod tests {
 
         // Give Bob bundle tokens
         mock_erc20_b
-            .transfer(test.bob.address(), 50.try_into()?)
+            .transfer(test.bob.address(), U256::from(50))
             .send()
             .await?
             .get_receipt()
@@ -2931,8 +2936,8 @@ mod tests {
             .get_receipt()
             .await?;
 
-        let erc1155_token_id = 1.try_into()?;
-        let erc1155_amount = 20.try_into()?;
+        let erc1155_token_id = U256::from(1);
+        let erc1155_amount = U256::from(20);
         mock_erc1155_a
             .mint(test.bob.address(), erc1155_token_id, erc1155_amount)
             .send()
@@ -2941,10 +2946,10 @@ mod tests {
             .await?;
 
         // Create test data
-        let erc20_amount: U256 = 50.try_into()?;
-        let bob_erc20_amount: U256 = 25.try_into()?; // Half of Bob's tokens
-        let erc721_token_id: U256 = 1.try_into()?;
-        let erc1155_bundle_amount = 10.try_into()?; // Half of Bob's tokens
+        let erc20_amount: U256 = U256::from(50);
+        let bob_erc20_amount: U256 = U256::from(25); // Half of Bob's tokens
+        let erc721_token_id: U256 = U256::from(1);
+        let erc1155_bundle_amount = U256::from(10); // Half of Bob's tokens
         let expiration = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() + 3600; // 1 hour
 
         // Create token bundle

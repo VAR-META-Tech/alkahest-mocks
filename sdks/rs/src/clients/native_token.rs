@@ -1,3 +1,4 @@
+use alloy::providers::Provider;
 use alloy::rpc::types::TransactionReceipt;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::{
@@ -12,7 +13,7 @@ use crate::extensions::ContractModule;
 use crate::types::{
     ArbiterData, DecodedAttestation, Erc20Data, Erc721Data, Erc1155Data, TokenBundleData,
 };
-use crate::types::{ProviderContext, WalletProvider};
+use crate::types::{ProviderContext, SharedWalletProvider};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,7 +34,7 @@ pub struct NativeTokenAddresses {
 #[derive(Clone)]
 pub struct NativeTokenModule {
     signer: PrivateKeySigner,
-    wallet_provider: WalletProvider,
+    wallet_provider: SharedWalletProvider,
 
     pub addresses: NativeTokenAddresses,
 }
@@ -93,7 +94,7 @@ impl NativeTokenModule {
     /// * `Result<Self>` - The initialized client instance
     pub fn new(
         signer: PrivateKeySigner,
-        wallet_provider: WalletProvider,
+        wallet_provider: SharedWalletProvider,
         addresses: Option<NativeTokenAddresses>,
     ) -> eyre::Result<Self> {
         Ok(NativeTokenModule {
@@ -138,7 +139,7 @@ impl NativeTokenModule {
         uid: FixedBytes<32>,
     ) -> eyre::Result<DecodedAttestation<contracts::NativeTokenEscrowObligation::ObligationData>>
     {
-        let eas_contract = contracts::IEAS::new(self.addresses.eas, &self.wallet_provider);
+        let eas_contract = contracts::IEAS::new(self.addresses.eas, &*self.wallet_provider);
 
         let attestation = eas_contract.getAttestation(uid).call().await?;
         let obligation_data =
@@ -155,7 +156,7 @@ impl NativeTokenModule {
         uid: FixedBytes<32>,
     ) -> eyre::Result<DecodedAttestation<contracts::NativeTokenPaymentObligation::ObligationData>>
     {
-        let eas_contract = contracts::IEAS::new(self.addresses.eas, &self.wallet_provider);
+        let eas_contract = contracts::IEAS::new(self.addresses.eas, &*self.wallet_provider);
 
         let attestation = eas_contract.getAttestation(uid).call().await?;
         let obligation_data =
@@ -182,7 +183,7 @@ impl NativeTokenModule {
     ) -> eyre::Result<TransactionReceipt> {
         let escrow_contract = contracts::NativeTokenEscrowObligation::new(
             self.addresses.escrow_obligation,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = escrow_contract
@@ -208,7 +209,7 @@ impl NativeTokenModule {
     ) -> eyre::Result<TransactionReceipt> {
         let escrow_contract = contracts::NativeTokenEscrowObligation::new(
             self.addresses.escrow_obligation,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = escrow_contract
@@ -238,7 +239,7 @@ impl NativeTokenModule {
     ) -> eyre::Result<TransactionReceipt> {
         let escrow_obligation_contract = contracts::NativeTokenEscrowObligation::new(
             self.addresses.escrow_obligation,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = escrow_obligation_contract
@@ -274,7 +275,7 @@ impl NativeTokenModule {
     ) -> eyre::Result<TransactionReceipt> {
         let payment_obligation_contract = contracts::NativeTokenPaymentObligation::new(
             self.addresses.payment_obligation,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = payment_obligation_contract
@@ -308,8 +309,9 @@ impl NativeTokenModule {
     ) -> eyre::Result<TransactionReceipt> {
         let barter_utils_contract = contracts::NativeTokenBarterUtils::new(
             self.addresses.barter_utils,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
+
         let receipt = barter_utils_contract
             .buyEthForEth(bid.value, ask.value, expiration)
             .value(bid.value)
@@ -334,7 +336,7 @@ impl NativeTokenModule {
     ) -> eyre::Result<TransactionReceipt> {
         let barter_utils_contract = contracts::NativeTokenBarterUtils::new(
             self.addresses.barter_utils,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = barter_utils_contract
@@ -364,7 +366,7 @@ impl NativeTokenModule {
     ) -> eyre::Result<TransactionReceipt> {
         let barter_utils_contract = contracts::NativeTokenBarterUtils::new(
             self.addresses.barter_utils,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = barter_utils_contract
@@ -391,7 +393,7 @@ impl NativeTokenModule {
     ) -> eyre::Result<TransactionReceipt> {
         let barter_utils_contract = contracts::NativeTokenBarterUtils::new(
             self.addresses.barter_utils,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = barter_utils_contract
@@ -421,7 +423,7 @@ impl NativeTokenModule {
     ) -> eyre::Result<TransactionReceipt> {
         let barter_utils_contract = contracts::NativeTokenBarterUtils::new(
             self.addresses.barter_utils,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = barter_utils_contract
@@ -448,7 +450,7 @@ impl NativeTokenModule {
     ) -> eyre::Result<TransactionReceipt> {
         let barter_utils_contract = contracts::NativeTokenBarterUtils::new(
             self.addresses.barter_utils,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = barter_utils_contract
@@ -478,7 +480,7 @@ impl NativeTokenModule {
     ) -> eyre::Result<TransactionReceipt> {
         let barter_utils_contract = contracts::NativeTokenBarterUtils::new(
             self.addresses.barter_utils,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = barter_utils_contract
@@ -505,7 +507,7 @@ impl NativeTokenModule {
     ) -> eyre::Result<TransactionReceipt> {
         let barter_utils_contract = contracts::NativeTokenBarterUtils::new(
             self.addresses.barter_utils,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = barter_utils_contract
@@ -535,7 +537,7 @@ impl NativeTokenModule {
     ) -> eyre::Result<TransactionReceipt> {
         let barter_utils_contract = contracts::NativeTokenBarterUtils::new(
             self.addresses.barter_utils,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = barter_utils_contract
@@ -562,7 +564,7 @@ impl NativeTokenModule {
     ) -> eyre::Result<TransactionReceipt> {
         let barter_utils_contract = contracts::NativeTokenBarterUtils::new(
             self.addresses.barter_utils,
-            &self.wallet_provider,
+            &*self.wallet_provider,
         );
 
         let receipt = barter_utils_contract
@@ -584,6 +586,6 @@ impl AlkahestExtension for NativeTokenModule {
         providers: ProviderContext,
         config: Option<Self::Config>,
     ) -> eyre::Result<Self> {
-        Self::new(signer, (*providers.wallet).clone(), config)
+        Self::new(signer, providers.wallet.clone(), config)
     }
 }

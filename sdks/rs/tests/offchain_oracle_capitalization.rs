@@ -1,8 +1,5 @@
 use std::{
-    convert::TryInto,
-    process::Command,
-    sync::Arc,
-    time::{Duration as StdDuration, SystemTime, UNIX_EPOCH},
+    convert::TryInto, process::Command, sync::Arc, thread::sleep, time::{Duration as StdDuration, SystemTime, UNIX_EPOCH}
 };
 
 use alkahest_rs::{
@@ -40,7 +37,7 @@ async fn run_synchronous_oracle_capitalization_example(test: &TestContext) -> ey
     .await
     .wrap_err("failed to construct Charlie's client")?;
     let charlie_oracle = charlie_client.oracle().clone();
-
+    println!("step1: charlie oracle client set up");
     // Step 1. Alice escrows ERC20 collateral guarded by Charlie's oracle suite.
     let mock_erc20 = MockERC20Permit::new(test.mock_addresses.erc20_a, &test.god_provider);
     mock_erc20
@@ -96,6 +93,7 @@ async fn run_synchronous_oracle_capitalization_example(test: &TestContext) -> ey
         .await?;
     let escrow_uid = DefaultAlkahestClient::get_attested_event(escrow_receipt)?.uid;
 
+    println!("step2: alice escrowed with uid {}", escrow_uid);
     // Step 2. Bob submits a bash pipeline fulfillment.
     let fulfillment_receipt = test
         .bob_client
@@ -104,12 +102,14 @@ async fn run_synchronous_oracle_capitalization_example(test: &TestContext) -> ey
         .await?;
     let fulfillment_uid = DefaultAlkahestClient::get_attested_event(fulfillment_receipt)?.uid;
 
+    println!("step3: bob fulfilled with uid {}", fulfillment_uid);
     // Step 3. Bob asks Charlie to arbitrate his fulfillment.
     test.bob_client
         .oracle()
         .request_arbitration(fulfillment_uid, charlie_client.address)
         .await?;
 
+    println!("step4: bob requested arbitration from charlie");
     // Step 4. Charlie evaluates the backlog and watches for new fulfillments.
     let charlie_client_for_closure = Arc::new(charlie_client.clone());
     let listen_result = charlie_oracle
@@ -186,7 +186,8 @@ async fn run_synchronous_oracle_capitalization_example(test: &TestContext) -> ey
     charlie_oracle
         .unsubscribe(listen_result.subscription_id)
         .await?;
-
+    println!("step5: charlie arbitrate completed");
+    sleep(std::time::Duration::from_secs(1));
     // Step 5. The successful arbitration lets Bob claim the escrowed payment.
     test.bob_client
         .erc20()

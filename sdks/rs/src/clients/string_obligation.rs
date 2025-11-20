@@ -2,7 +2,7 @@ use crate::{
     addresses::BASE_SEPOLIA_ADDRESSES,
     contracts,
     extensions::{AlkahestExtension, ContractModule},
-    types::{DecodedAttestation, ProviderContext, WalletProvider},
+    types::{DecodedAttestation, ProviderContext, SharedWalletProvider},
 };
 use alloy::providers::Provider;
 use alloy::{
@@ -22,7 +22,7 @@ pub struct StringObligationAddresses {
 #[derive(Clone)]
 pub struct StringObligationModule {
     _signer: PrivateKeySigner,
-    wallet_provider: WalletProvider,
+    wallet_provider: SharedWalletProvider,
 
     pub addresses: StringObligationAddresses,
 }
@@ -65,7 +65,7 @@ impl StringObligationModule {
     /// * `Result<Self>` - The initialized client instance with all sub-clients configured
     pub fn new(
         signer: PrivateKeySigner,
-        wallet_provider: WalletProvider,
+        wallet_provider: SharedWalletProvider,
         addresses: Option<StringObligationAddresses>,
     ) -> eyre::Result<Self> {
         Ok(StringObligationModule {
@@ -80,7 +80,7 @@ impl StringObligationModule {
         &self,
         uid: FixedBytes<32>,
     ) -> eyre::Result<DecodedAttestation<contracts::StringObligation::ObligationData>> {
-        let eas_contract = contracts::IEAS::new(self.addresses.eas, &self.wallet_provider);
+        let eas_contract = contracts::IEAS::new(self.addresses.eas, &*self.wallet_provider);
 
         let attestation = eas_contract.getAttestation(uid).call().await?;
         let obligation_data =
@@ -122,19 +122,15 @@ impl StringObligationModule {
         ref_uid: Option<FixedBytes<32>>,
     ) -> eyre::Result<TransactionReceipt> {
         let contract =
-            contracts::StringObligation::new(self.addresses.obligation, &self.wallet_provider);
+            contracts::StringObligation::new(self.addresses.obligation, &*self.wallet_provider);
 
         let obligation_data = contracts::StringObligation::ObligationData { item };
-
-        let address = self._signer.address();
-        let nonce = self.wallet_provider.get_transaction_count(address).await?;
 
         let receipt = contract
             .doObligation(
                 obligation_data,
                 ref_uid.unwrap_or(FixedBytes::<32>::default()),
             )
-            .nonce(nonce)
             .send()
             .await?
             .get_receipt()
@@ -149,11 +145,12 @@ impl StringObligationModule {
         ref_uid: Option<FixedBytes<32>>,
     ) -> eyre::Result<TransactionReceipt> {
         let contract =
-            contracts::StringObligation::new(self.addresses.obligation, &self.wallet_provider);
+            contracts::StringObligation::new(self.addresses.obligation, &*self.wallet_provider);
 
         let obligation_data = contracts::StringObligation::ObligationData {
             item: serde_json::to_string(&obligation_data)?,
         };
+
         let receipt = contract
             .doObligation(
                 obligation_data,
@@ -176,6 +173,6 @@ impl AlkahestExtension for StringObligationModule {
         providers: ProviderContext,
         config: Option<Self::Config>,
     ) -> eyre::Result<Self> {
-        Self::new(signer, (*providers.wallet).clone(), config)
+        Self::new(signer, providers.wallet.clone(), config)
     }
 }
