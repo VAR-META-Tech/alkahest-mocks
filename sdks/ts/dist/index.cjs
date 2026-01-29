@@ -36913,8 +36913,11 @@ var makeErc20UtilClient = (viemClient, addresses) => {
       primaryType: "Permit",
       types
     });
-    const [r, s, v] = [(0, import_viem24.slice)(signature, 0, 32), (0, import_viem24.slice)(signature, 32, 64), (0, import_viem24.slice)(signature, 64, 65)];
-    return { deadline: props.deadline, r, s, v: (0, import_viem24.hexToNumber)(v) };
+    const r = (0, import_viem24.slice)(signature, 0, 32);
+    const s = (0, import_viem24.slice)(signature, 32, 64);
+    const vRaw = (0, import_viem24.hexToNumber)((0, import_viem24.slice)(signature, 64, 65));
+    const v = vRaw < 27 ? vRaw + 27 : vRaw;
+    return { deadline: props.deadline, r, s, v };
   };
   const getPermitSignature = async (spender, token, deadline) => {
     const nonce = await readContract(viemClient, {
