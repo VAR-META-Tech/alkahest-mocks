@@ -34,9 +34,12 @@ export const makeErc20UtilClient = (viemClient: ViemClient, addresses: Erc20Addr
       types,
     });
 
-    const [r, s, v] = [slice(signature, 0, 32), slice(signature, 32, 64), slice(signature, 64, 65)];
+    const r = slice(signature, 0, 32);
+    const s = slice(signature, 32, 64);
+    const vRaw = hexToNumber(slice(signature, 64, 65));
+    const v = vRaw < 27 ? vRaw + 27 : vRaw;
 
-    return { deadline: props.deadline, r, s, v: hexToNumber(v) };
+    return { deadline: props.deadline, r, s, v };
   };
 
   const getPermitSignature = async (
